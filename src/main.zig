@@ -13,10 +13,9 @@ pub fn main() !void {
     defer allocator.free(mm_buffer);
     _ = try mm_file.readAll(mm_buffer);
 
-    var tokens = mm.TokenIterator{ .buffer = mm_buffer };
-    while (tokens.next() catch |err| return err) |token| {
-        // ...handle token in some way
-    }
+    _ = mm.verify(mm_buffer) catch |err| {
+        // ...some nice error reporting
+    };
 }
 
 test "run main" {

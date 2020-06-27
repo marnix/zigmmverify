@@ -1,7 +1,14 @@
 const std = @import("std");
 const assert = @import("std").debug.assert;
 
-const Error = error{IllegalCharacter};
+pub fn verify(buffer: []u8) Error!void {
+    var tokens = TokenIterator{ .buffer = buffer };
+    while (try tokens.next()) |token| {
+        // ...handle token in some way
+    }
+}
+
+pub const Error = error{IllegalCharacter};
 
 pub const TokenIterator = struct {
     buffer: []const u8,
