@@ -1,5 +1,5 @@
 const std = @import("std");
-const assert = @import("std").debug.assert;
+const assert = std.debug.assert;
 
 pub fn verify(buffer: []u8) Error!void {
     var tokens = TokenIterator{ .buffer = buffer };
@@ -56,63 +56,65 @@ pub const TokenIterator = struct {
     }
 };
 
+const expect = std.testing.expect;
+
 fn eq(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
 
 test "tokenizer on empty buffer" {
     var tokens = TokenIterator{ .buffer = "" };
-    assert((try tokens.next()) == null);
-    assert((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
 }
 
 test "tokenizer on whitespace buffer" {
     var tokens = TokenIterator{ .buffer = "  \t " };
-    assert((try tokens.next()) == null);
-    assert((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
 }
 
 test "tokenizer with whitespace at start" {
     var tokens = TokenIterator{ .buffer = " $d $." };
-    assert(eq((try tokens.next()).?, "$d"));
-    assert(eq((try tokens.next()).?, "$."));
-    assert((try tokens.next()) == null);
-    assert((try tokens.next()) == null);
+    expect(eq((try tokens.next()).?, "$d"));
+    expect(eq((try tokens.next()).?, "$."));
+    expect((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
 }
 
 test "tokenizer with whitespace at end" {
     var tokens = TokenIterator{ .buffer = "$d $. " };
-    assert(eq((try tokens.next()).?, "$d"));
-    assert(eq((try tokens.next()).?, "$."));
-    assert((try tokens.next()) == null);
-    assert((try tokens.next()) == null);
+    expect(eq((try tokens.next()).?, "$d"));
+    expect(eq((try tokens.next()).?, "$."));
+    expect((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
 }
 
 test "tokenizer with skipped illegal 'low' character" {
     var tokens = TokenIterator{ .buffer = "$d\x03$." };
-    assert(eq((try tokens.next()).?, "$d"));
-    if (tokens.next()) |_| unreachable else |err| assert(err == Error.IllegalCharacter);
-    assert(eq((try tokens.next()).?, "$."));
-    assert((try tokens.next()) == null);
-    assert((try tokens.next()) == null);
+    expect(eq((try tokens.next()).?, "$d"));
+    if (tokens.next()) |_| unreachable else |err| expect(err == Error.IllegalCharacter);
+    expect(eq((try tokens.next()).?, "$."));
+    expect((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
 }
 
 test "tokenizer with skipped illegal 'high' character" {
     var tokens = TokenIterator{ .buffer = "$( a\x7fc $)" };
-    assert(eq((try tokens.next()).?, "$("));
-    assert(eq((try tokens.next()).?, "a"));
-    if (tokens.next()) |_| unreachable else |err| assert(err == Error.IllegalCharacter);
-    assert(eq((try tokens.next()).?, "c"));
-    assert(eq((try tokens.next()).?, "$)"));
-    assert((try tokens.next()) == null);
-    assert((try tokens.next()) == null);
+    expect(eq((try tokens.next()).?, "$("));
+    expect(eq((try tokens.next()).?, "a"));
+    if (tokens.next()) |_| unreachable else |err| expect(err == Error.IllegalCharacter);
+    expect(eq((try tokens.next()).?, "c"));
+    expect(eq((try tokens.next()).?, "$)"));
+    expect((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
 }
 
 test "tokenizer" {
     var tokens = TokenIterator{ .buffer = "$c wff $." };
-    assert(eq((try tokens.next()).?, "$c"));
-    assert(eq((try tokens.next()).?, "wff"));
-    assert(eq((try tokens.next()).?, "$."));
-    assert((try tokens.next()) == null);
-    assert((try tokens.next()) == null);
+    expect(eq((try tokens.next()).?, "$c"));
+    expect(eq((try tokens.next()).?, "wff"));
+    expect(eq((try tokens.next()).?, "$."));
+    expect((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
 }
