@@ -1,17 +1,14 @@
 const std = @import("std");
-
-fn eq(a: []const u8, b: []const u8) bool {
-    return std.mem.eql(u8, a, b);
-}
+const assert = @import("std").debug.assert;
 
 const Error = error{IllegalCharacter};
 
-const MMIterator = struct {
+const TokenIterator = struct {
     buffer: []const u8,
     index: u64 = 0,
     optError: ?Error = null,
 
-    pub fn next(self: *MMIterator) Error!?[]const u8 {
+    pub fn next(self: *TokenIterator) Error!?[]const u8 {
         // return any error detected in the previous call
         if (self.optError) |err| {
             self.optError = null;
@@ -60,73 +57,75 @@ pub fn main() !void {
     const mm_file = try std.fs.cwd().openFile("set.mm", .{});
     defer mm_file.close();
     const size = (try mm_file.stat()).size;
-    const buf = try allocator.alloc(u8, size);
-    defer allocator.free(buf);
-    _ = try mm_file.readAll(buf);
+    const mm_buffer = try allocator.alloc(u8, size);
+    defer allocator.free(mm_buffer);
+    _ = try mm_file.readAll(mm_buffer);
 
-    var iter = MMIterator{ .buffer = buf };
-    while (iter.next() catch |err| return err) |token| {
+    var tokens = TokenIterator{ .buffer = mm_buffer };
+    while (tokens.next() catch |err| return err) |token| {
         // ...handle token in some way
     }
 }
 
-const assert = @import("std").debug.assert;
+fn eq(a: []const u8, b: []const u8) bool {
+    return std.mem.eql(u8, a, b);
+}
 
 test "tokenizer on empty buffer" {
-    var iter = MMIterator{ .buffer = "" };
-    assert((try iter.next()) == null);
-    assert((try iter.next()) == null);
+    var tokens = TokenIterator{ .buffer = "" };
+    assert((try tokens.next()) == null);
+    assert((try tokens.next()) == null);
 }
 
 test "tokenizer on whitespace buffer" {
-    var iter = MMIterator{ .buffer = "  \t " };
-    assert((try iter.next()) == null);
-    assert((try iter.next()) == null);
+    var tokens = TokenIterator{ .buffer = "  \t " };
+    assert((try tokens.next()) == null);
+    assert((try tokens.next()) == null);
 }
 
 test "tokenizer with whitespace at start" {
-    var iter = MMIterator{ .buffer = " $d $." };
-    assert(eq((try iter.next()).?, "$d"));
-    assert(eq((try iter.next()).?, "$."));
-    assert((try iter.next()) == null);
-    assert((try iter.next()) == null);
+    var tokens = TokenIterator{ .buffer = " $d $." };
+    assert(eq((try tokens.next()).?, "$d"));
+    assert(eq((try tokens.next()).?, "$."));
+    assert((try tokens.next()) == null);
+    assert((try tokens.next()) == null);
 }
 
 test "tokenizer with whitespace at end" {
-    var iter = MMIterator{ .buffer = "$d $. " };
-    assert(eq((try iter.next()).?, "$d"));
-    assert(eq((try iter.next()).?, "$."));
-    assert((try iter.next()) == null);
-    assert((try iter.next()) == null);
+    var tokens = TokenIterator{ .buffer = "$d $. " };
+    assert(eq((try tokens.next()).?, "$d"));
+    assert(eq((try tokens.next()).?, "$."));
+    assert((try tokens.next()) == null);
+    assert((try tokens.next()) == null);
 }
 
 test "tokenizer with skipped illegal 'low' character" {
-    var iter = MMIterator{ .buffer = "$d\x03$." };
-    assert(eq((try iter.next()).?, "$d"));
-    if (iter.next()) |_| unreachable else |err| assert(err == Error.IllegalCharacter);
-    assert(eq((try iter.next()).?, "$."));
-    assert((try iter.next()) == null);
-    assert((try iter.next()) == null);
+    var tokens = TokenIterator{ .buffer = "$d\x03$." };
+    assert(eq((try tokens.next()).?, "$d"));
+    if (tokens.next()) |_| unreachable else |err| assert(err == Error.IllegalCharacter);
+    assert(eq((try tokens.next()).?, "$."));
+    assert((try tokens.next()) == null);
+    assert((try tokens.next()) == null);
 }
 
 test "tokenizer with skipped illegal 'high' character" {
-    var iter = MMIterator{ .buffer = "$( a\x7fc $)" };
-    assert(eq((try iter.next()).?, "$("));
-    assert(eq((try iter.next()).?, "a"));
-    if (iter.next()) |_| unreachable else |err| assert(err == Error.IllegalCharacter);
-    assert(eq((try iter.next()).?, "c"));
-    assert(eq((try iter.next()).?, "$)"));
-    assert((try iter.next()) == null);
-    assert((try iter.next()) == null);
+    var tokens = TokenIterator{ .buffer = "$( a\x7fc $)" };
+    assert(eq((try tokens.next()).?, "$("));
+    assert(eq((try tokens.next()).?, "a"));
+    if (tokens.next()) |_| unreachable else |err| assert(err == Error.IllegalCharacter);
+    assert(eq((try tokens.next()).?, "c"));
+    assert(eq((try tokens.next()).?, "$)"));
+    assert((try tokens.next()) == null);
+    assert((try tokens.next()) == null);
 }
 
 test "tokenizer" {
-    var iter = MMIterator{ .buffer = "$c wff $." };
-    assert(eq((try iter.next()).?, "$c"));
-    assert(eq((try iter.next()).?, "wff"));
-    assert(eq((try iter.next()).?, "$."));
-    assert((try iter.next()) == null);
-    assert((try iter.next()) == null);
+    var tokens = TokenIterator{ .buffer = "$c wff $." };
+    assert(eq((try tokens.next()).?, "$c"));
+    assert(eq((try tokens.next()).?, "wff"));
+    assert(eq((try tokens.next()).?, "$."));
+    assert((try tokens.next()) == null);
+    assert((try tokens.next()) == null);
 }
 
 test "run main" {
