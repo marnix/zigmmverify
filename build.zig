@@ -5,7 +5,6 @@ pub fn build(b: *Builder) void {
 
     var exe = b.addExecutable("zigmmverify", "src/main.zig");
     exe.setBuildMode(mode);
-    exe.linkSystemLibrary("c");
 
     var tst = b.addTest("src/main.zig");
 
