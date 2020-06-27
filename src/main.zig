@@ -9,31 +9,31 @@ const MMIterator = struct {
     index: u64 = 0,
 
     pub fn next(self: *MMIterator) ?[]const u8 {
-        var len: u64 = 0;
+        var i = self.index;
+        var j = i;
+        // invariant: self.buffer[i..j] is the current token so far
         while (true) {
-            // are we after a token (so at end of file or whitespace?
-            const atEnd = (self.index + len >= self.buffer.len);
+            // where are we?
+            const atEnd = (j >= self.buffer.len);
             var afterToken = true;
             if (!atEnd) {
-                const c = self.buffer[self.index + len];
+                const c = self.buffer[j];
                 // TODO: error if c is invalid byte
                 afterToken = (c <= ' ');
             }
-            // return the next token
-            if (afterToken and len > 0) {
-                const result = self.buffer[self.index .. self.index + len];
-                self.index = self.index + len + 1;
-                return result;
+            // return the next token, if any
+            if (afterToken and i < j) {
+                self.index = j + 1;
+                return self.buffer[i..j];
             }
             // update iterator state
             if (atEnd) {
                 return null;
             }
+            j += 1; // extend token with current character
             if (afterToken) {
-                assert(len == 0);
-                self.index += 1; // start again at the next character
-            } else {
-                len += 1; // extend the current token
+                assert(j - i == 1);
+                i += 1; // remove current character again
             }
         }
     }
