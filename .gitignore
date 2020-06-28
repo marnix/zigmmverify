@@ -1,4 +1,7 @@
 /zig-cache
 *.o
 *.exe
+
+.*.swp
+
 set.mm
