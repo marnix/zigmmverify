@@ -118,3 +118,16 @@ test "tokenizer" {
     expect((try tokens.next()) == null);
     expect((try tokens.next()) == null);
 }
+
+test "tokenizer comment without newline" {
+    var tokens = TokenIterator{ .buffer = "$( a b c $)\n$c $." };
+    expect(eq((try tokens.next()).?, "$("));
+    expect(eq((try tokens.next()).?, "a"));
+    expect(eq((try tokens.next()).?, "b"));
+    expect(eq((try tokens.next()).?, "c"));
+    expect(eq((try tokens.next()).?, "$)"));
+    expect(eq((try tokens.next()).?, "$c"));
+    expect(eq((try tokens.next()).?, "$."));
+    expect((try tokens.next()) == null);
+    expect((try tokens.next()) == null);
+}
