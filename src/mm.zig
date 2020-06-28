@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
 pub fn verify(buffer: []u8) Error!void {
@@ -10,12 +11,51 @@ pub fn verify(buffer: []u8) Error!void {
 
 pub const Error = error{IllegalCharacter};
 
-pub const TokenIterator = struct {
+//-----------------------------------------------------------------------------
+// PARSING
+
+const StatementType = enum { C //, V, F, E, D, A, P, BlockOpen, BlockClose
+};
+
+const Statement = union(StatementType) {
+    C: struct { constants: std.StringHashMap(void) },
+};
+
+const StatementIterator = struct {
+    allocator: *Allocator,
+    tokens: TokenIterator,
+
+    fn create(allocator: *Allocator, buffer: []const u8) StatementIterator {
+        return StatementIterator{ .allocator = allocator, .tokens = TokenIterator{ .buffer = buffer } };
+    }
+
+    fn next(self: *StatementIterator) Error!?Statement {
+        return null;
+    }
+};
+
+test "parse constant declaration" {
+    var statements = StatementIterator.create(std.testing.allocator, "$c wff |- $.");
+    // TODO: assert a single StatementType.C result
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "parse empty file" {
+    var statements = StatementIterator.create(std.testing.allocator, "");
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+//-----------------------------------------------------------------------------
+// TOKENIZING
+
+const TokenIterator = struct {
     buffer: []const u8,
     index: u64 = 0,
     optError: ?Error = null,
 
-    pub fn next(self: *TokenIterator) Error!?[]const u8 {
+    fn next(self: *TokenIterator) Error!?[]const u8 {
         // return any error detected in the previous call
         if (self.optError) |err| {
             self.optError = null;
