@@ -59,6 +59,15 @@ pub fn eq(a: Token, b: Token) bool {
     return std.mem.eql(u8, a, b);
 }
 
+pub fn eqs(a: TokenList, b: []const Token) bool {
+    if (a.count() != b.len) return false;
+    var i: usize = 0;
+    while (i < b.len) : (i += 1) {
+        if (!eq(a.at(i).*, b[i])) return false;
+    }
+    return true;
+}
+
 const expect = std.testing.expect;
 
 test "tokenizer on empty buffer" {

@@ -7,6 +7,7 @@ const Error = errors.Error;
 const tokenize = @import("tokenize.zig");
 const Token = tokenize.Token;
 const eq = tokenize.eq;
+const eqs = tokenize.eqs;
 const TokenList = tokenize.TokenList;
 const TokenIterator = tokenize.TokenIterator;
 
@@ -80,12 +81,19 @@ const StatementIterator = struct {
 
 const expect = std.testing.expect;
 
+fn forNext(statements: *StatementIterator, f: var) !void {
+    const s = try statements.next();
+    _ = f.do(s);
+    s.?.deinit(std.testing.allocator);
+}
+
 test "parse constant declaration" {
     var statements = StatementIterator.init(std.testing.allocator, "$c wff |- $.");
-    // TODO: abbreviation for simpler expect statements, preferably allowing for list literals
-    const s = try statements.next();
-    expect(s != null); // TODO: refine
-    s.?.deinit(std.testing.allocator);
+    _ = try forNext(&statements, struct {
+        fn do(s: var) void {
+            expect(eqs(s.?.C.constants, &[_]Token{ "wff", "|-" }));
+        }
+    });
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
