@@ -1,3 +1,5 @@
+// TODO: Split into separate files in mm directory
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
@@ -9,7 +11,7 @@ pub fn verify(buffer: []u8) Error!void {
     }
 }
 
-pub const Error = error{IllegalCharacter};
+pub const Error = error{ IllegalCharacter, Incomplete, UnexpectedToken, IllegalToken };
 
 //-----------------------------------------------------------------------------
 // PARSING
@@ -17,32 +19,77 @@ pub const Error = error{IllegalCharacter};
 const StatementType = enum { C //, V, F, E, D, A, P, BlockOpen, BlockClose
 };
 
+const Token = []const u8;
+const TokenList = std.SegmentedList(Token, 0); // TODO: Create custom?  E.g., AppendOnlyList singly-linked list.
+
 const Statement = union(StatementType) {
-    C: struct { constants: std.StringHashMap(void) },
+    C: struct { constants: TokenList },
+
+    fn deinit(self: *Statement, allocator: *Allocator) void {
+        switch (self.*) {
+            .C => self.*.C.constants.deinit(),
+        }
+        allocator.destroy(self);
+    }
 };
 
 const StatementIterator = struct {
     allocator: *Allocator,
     tokens: TokenIterator,
 
-    fn create(allocator: *Allocator, buffer: []const u8) StatementIterator {
+    fn init(allocator: *Allocator, buffer: Token) StatementIterator {
         return StatementIterator{ .allocator = allocator, .tokens = TokenIterator{ .buffer = buffer } };
     }
 
-    fn next(self: *StatementIterator) Error!?Statement {
-        return null;
+    fn next(self: *StatementIterator) !?*Statement {
+        // get next token
+        var token = (try self.tokens.next()) orelse {
+            // we have seen the last Token, so we have seen the last Statement, end of iteration
+            return null;
+        };
+        // if the token is a label, read one more token
+        var label: ?Token = null;
+        while (label == null) {
+            if (token[0] == '$') break;
+            label = token;
+            token = (try self.tokens.next()) orelse return Error.Incomplete;
+        }
+        if (token[0] != '$') return Error.UnexpectedToken;
+        if (token.len != 2) return Error.IllegalToken;
+        // handle the $x command
+        switch (token[1]) {
+            'c' => {
+                // TODO: move to new fn 'read TokenList until terminator token'
+                var l = TokenList.init(self.allocator);
+                while (true) {
+                    token = (try self.tokens.next()) orelse return Error.Incomplete;
+                    if (eq(token, "$.")) break;
+                    // TODO: check against duplicates
+                    _ = try l.push(token);
+                }
+                const result = try self.allocator.create(Statement);
+                result.* = Statement{ .C = .{ .constants = l } };
+                return result;
+            },
+            else => return Error.IllegalToken,
+        }
     }
 };
 
 test "parse constant declaration" {
-    var statements = StatementIterator.create(std.testing.allocator, "$c wff |- $.");
-    // TODO: assert a single StatementType.C result
+    var statements = StatementIterator.init(std.testing.allocator, "$c wff |- $.");
+    // TODO: abbreviation for simpler expect statements, preferably allowing for list literals
+    const s = try statements.next();
+    expect(s != null); // TODO: refine
+    s.?.deinit(std.testing.allocator);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
+// TODO: add more tests for checking error values
+
 test "parse empty file" {
-    var statements = StatementIterator.create(std.testing.allocator, "");
+    var statements = StatementIterator.init(std.testing.allocator, "");
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
@@ -51,11 +98,12 @@ test "parse empty file" {
 // TOKENIZING
 
 const TokenIterator = struct {
-    buffer: []const u8,
+    buffer: Token,
     index: u64 = 0,
     optError: ?Error = null,
 
-    fn next(self: *TokenIterator) Error!?[]const u8 {
+    // TODO: Let the error union be inferred?
+    fn next(self: *TokenIterator) Error!?Token {
         // return any error detected in the previous call
         if (self.optError) |err| {
             self.optError = null;
@@ -98,7 +146,7 @@ const TokenIterator = struct {
 
 const expect = std.testing.expect;
 
-fn eq(a: []const u8, b: []const u8) bool {
+fn eq(a: Token, b: Token) bool {
     return std.mem.eql(u8, a, b);
 }
 
