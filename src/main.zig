@@ -1,5 +1,5 @@
 const std = @import("std");
-const mm = @import("mm.zig");
+const verify = @import("verify.zig");
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -13,11 +13,7 @@ pub fn main() !void {
     defer allocator.free(mm_buffer);
     _ = try mm_file.readAll(mm_buffer);
 
-    _ = mm.verify(mm_buffer) catch |err| {
+    _ = verify.verify(mm_buffer) catch |err| {
         // ...some nice error reporting
     };
-}
-
-test "run main" {
-    try main();
 }
