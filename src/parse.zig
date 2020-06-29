@@ -49,21 +49,27 @@ const StatementIterator = struct {
         if (token.len != 2) return Error.IllegalToken;
         // handle the $x command
         switch (token[1]) {
-            'c' => {
-                // TODO: move to new fn 'read TokenList until terminator token'
-                var l = TokenList.init(self.allocator);
-                while (true) {
-                    token = (try self.tokens.next()) orelse return Error.Incomplete;
-                    if (eq(token, "$.")) break;
-                    // TODO: check against duplicates
-                    _ = try l.push(token);
-                }
-                const result = try self.allocator.create(Statement);
-                result.* = Statement{ .C = .{ .constants = l } };
-                return result;
-            },
+            'c' => return self.statement(.{
+                .C = .{ .constants = try self.nextUntil("$.") },
+            }),
             else => return Error.IllegalToken,
         }
+    }
+
+    fn nextUntil(self: *StatementIterator, terminator: Token) !TokenList {
+        var result = TokenList.init(self.allocator);
+        while (true) {
+            const token = (try self.tokens.next()) orelse return Error.Incomplete;
+            if (eq(token, terminator)) break;
+            _ = try result.push(token);
+        }
+        return result;
+    }
+
+    fn statement(self: *StatementIterator, s: Statement) !*Statement {
+        const result = try self.allocator.create(Statement);
+        result.* = s;
+        return result;
     }
 };
 
