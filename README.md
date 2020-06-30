@@ -25,11 +25,6 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 # Next tasks
 
-- Create a StatementIterator.
-
-   * How to represent statements?
-     As a tagged union of the various statement types?
-
 - Loop over statements keeping a stack of blocks (for $d/$e/$f and $c/$v)
   and a map (for $p/$a).
 
