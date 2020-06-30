@@ -13,7 +13,12 @@ pub fn main() !void {
     defer allocator.free(mm_buffer);
     _ = try mm_file.readAll(mm_buffer);
 
-    _ = verify.verify(mm_buffer) catch |err| {
+    _ = verify.verify(mm_buffer, allocator) catch |err| {
         // ...some nice error reporting
+        return err;
     };
+}
+
+test "run main" {
+    try main();
 }

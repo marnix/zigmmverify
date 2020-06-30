@@ -11,9 +11,9 @@ const eqs = tokenize.eqs;
 const TokenList = tokenize.TokenList;
 const TokenIterator = tokenize.TokenIterator;
 
-const StatementType = enum { C, V, F, E, D, A, P, BlockOpen, BlockClose };
+pub const StatementType = enum { C, V, F, E, D, A, P, BlockOpen, BlockClose };
 
-const Statement = union(StatementType) {
+pub const Statement = union(StatementType) {
     C: struct { constants: TokenList },
     V: struct { variables: TokenList },
     F: struct { label: Token, kind: Token, variable: Token },
@@ -24,7 +24,7 @@ const Statement = union(StatementType) {
     BlockOpen,
     BlockClose: struct {},
 
-    fn deinit(self: *Statement, allocator: *Allocator) void {
+    pub fn deinit(self: *Statement, allocator: *Allocator) void {
         switch (self.*) {
             .C => self.*.C.constants.deinit(),
             .V => self.*.V.variables.deinit(),
@@ -42,16 +42,16 @@ const Statement = union(StatementType) {
     }
 };
 
-const StatementIterator = struct {
+pub const StatementIterator = struct {
     allocator: *Allocator,
     tokens: TokenIterator,
     optStatement: ?*Statement = null,
 
-    fn init(allocator: *Allocator, buffer: Token) StatementIterator {
+    pub fn init(allocator: *Allocator, buffer: Token) StatementIterator {
         return StatementIterator{ .allocator = allocator, .tokens = TokenIterator{ .buffer = buffer } };
     }
 
-    fn next(self: *StatementIterator) !?*Statement {
+    pub fn next(self: *StatementIterator) !?*Statement {
         // return any statement detected in the previous call
         if (self.optStatement) |s| {
             self.optStatement = null;

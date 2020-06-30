@@ -6,7 +6,7 @@ pub fn build(b: *Builder) void {
     var exe = b.addExecutable("zigmmverify", "src/main.zig");
     exe.setBuildMode(mode);
 
-    exe.step.dependOn(&(b.addTest("src/parse.zig")).step);
+    exe.step.dependOn(&(b.addTest("src/main.zig")).step);
 
     b.default_step.dependOn(&exe.step);
 
