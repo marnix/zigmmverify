@@ -13,21 +13,24 @@ const TokenList = tokenize.TokenList;
 
 const expect = std.testing.expect;
 
-pub fn decompress(tokens: TokenList, allocator: *Allocator) !TokenList {
+/// If given compressed proof, that is consumed.
+/// If given uncompressed proof, that is returned.
+pub fn decompress(tokens: *TokenList, allocator: *Allocator) !TokenList {
+    if (tokens.count() == 0 or !eq(tokens.at(0).*, "(")) {
+        return tokens.*;
+    }
+    defer tokens.deinit();
     var result = TokenList.init(allocator);
+    var it = tokens.iterator(0);
+    while (it.next()) |pToken| {
+        //...
+    }
     return result;
 }
 
 // ----------------------------------------------------------------------------
 
 const TokenIterator = tokenize.TokenIterator;
-
-fn decompressString(buffer: []const u8) !TokenList {
-    if (!@import("builtin").is_test) @panic("for testing purposes only");
-    var tokenList = tokenListOf(buffer);
-    defer (&tokenList).deinit();
-    return decompress(tokenList, std.testing.allocator);
-}
 
 fn tokenListOf(buffer: []const u8) TokenList {
     if (!@import("builtin").is_test) @panic("for testing purposes only");
@@ -39,6 +42,16 @@ fn tokenListOf(buffer: []const u8) TokenList {
     return result;
 }
 
-test "decompress empty proof" {
-    expect(eqs(try decompressString("( )"), &[_]Token{}));
+test "'decompress' uncompressed proof" {
+    var input = tokenListOf("id ? id");
+    var output = try decompress(&input, std.testing.allocator);
+    expect(eqs(output, &[_]Token{ "id", "?", "id" }));
+    defer output.deinit();
+}
+
+test "decompress empty compressed proof" {
+    var input = tokenListOf("( )");
+    var output = try decompress(&input, std.testing.allocator);
+    expect(eqs(output, &[_]Token{}));
+    defer output.deinit();
 }
