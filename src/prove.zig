@@ -42,16 +42,17 @@ fn tokenListOf(buffer: []const u8) TokenList {
     return result;
 }
 
-test "'decompress' uncompressed proof" {
-    var input = tokenListOf("id ? id");
+fn expectDecompress(i: []const u8, o: []const Token) !void {
+    var input = tokenListOf(i);
     var output = try decompress(&input, std.testing.allocator);
-    expect(eqs(output, &[_]Token{ "id", "?", "id" }));
+    expect(eqs(output, o));
     defer output.deinit();
 }
 
+test "'decompress' uncompressed proof" {
+    try expectDecompress("id ? id", &[_]Token{ "id", "?", "id" });
+}
+
 test "decompress empty compressed proof" {
-    var input = tokenListOf("( )");
-    var output = try decompress(&input, std.testing.allocator);
-    expect(eqs(output, &[_]Token{}));
-    defer output.deinit();
+    try expectDecompress("( )", &[_]Token{});
 }
