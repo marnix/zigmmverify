@@ -11,7 +11,7 @@ const eqs = tokenize.eqs;
 const TokenList = tokenize.TokenList;
 const TokenIterator = tokenize.TokenIterator;
 
-const StatementType = enum { C, V, F, E, D, A // , P, BlockOpen, BlockClose
+const StatementType = enum { C, V, F, E, D, A, P //, BlockOpen, BlockClose
 };
 
 const Statement = union(StatementType) {
@@ -21,6 +21,7 @@ const Statement = union(StatementType) {
     E: struct { label: Token, expression: TokenList },
     D: struct { variables: TokenList },
     A: struct { label: Token, expression: TokenList },
+    P: struct { label: Token, expression: TokenList, proof: TokenList },
 
     fn deinit(self: *Statement, allocator: *Allocator) void {
         switch (self.*) {
@@ -30,6 +31,10 @@ const Statement = union(StatementType) {
             .E => self.*.E.expression.deinit(),
             .D => self.*.D.variables.deinit(),
             .A => self.*.A.expression.deinit(),
+            .P => {
+                self.*.P.expression.deinit();
+                self.*.P.proof.deinit();
+            },
         }
         allocator.destroy(self);
     }
@@ -108,6 +113,16 @@ const StatementIterator = struct {
                     },
                 });
             },
+            'p' => {
+                defer label = null;
+                result = try self.statement(.{
+                    .P = .{
+                        .label = label orelse return Error.MissingLabel,
+                        .expression = try self.nextUntil("$="),
+                        .proof = try self.nextUntil("$."),
+                    },
+                });
+            },
             else => return Error.IllegalToken,
         }
         if (label) |_| {
@@ -140,6 +155,18 @@ fn forNext(statements: *StatementIterator, f: var) !void {
     const s = try statements.next();
     _ = f.do(s);
     s.?.deinit(std.testing.allocator);
+}
+
+test "parse $p declaration" {
+    var statements = StatementIterator.init(std.testing.allocator, "idwffph $p wff ph $= ? $.");
+    _ = try forNext(&statements, struct {
+        fn do(s: var) void {
+            expect(eqs(s.?.P.expression, &[_]Token{ "wff", "ph" }));
+            expect(eqs(s.?.P.proof, &[_]Token{"?"}));
+        }
+    });
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
 }
 
 test "parse $f declaration" {
