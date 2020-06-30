@@ -11,8 +11,7 @@ const eqs = tokenize.eqs;
 const TokenList = tokenize.TokenList;
 const TokenIterator = tokenize.TokenIterator;
 
-const StatementType = enum { C, V, F, E, D, A, P //, BlockOpen, BlockClose
-};
+const StatementType = enum { C, V, F, E, D, A, P, BlockOpen, BlockClose };
 
 const Statement = union(StatementType) {
     C: struct { constants: TokenList },
@@ -22,6 +21,8 @@ const Statement = union(StatementType) {
     D: struct { variables: TokenList },
     A: struct { label: Token, expression: TokenList },
     P: struct { label: Token, expression: TokenList, proof: TokenList },
+    BlockOpen,
+    BlockClose: struct {},
 
     fn deinit(self: *Statement, allocator: *Allocator) void {
         switch (self.*) {
@@ -35,6 +36,7 @@ const Statement = union(StatementType) {
                 self.*.P.expression.deinit();
                 self.*.P.proof.deinit();
             },
+            .BlockOpen, .BlockClose => {},
         }
         allocator.destroy(self);
     }
@@ -123,6 +125,8 @@ const StatementIterator = struct {
                     },
                 });
             },
+            '{' => return self.statement(.{ .BlockOpen = .{} }),
+            '}' => return self.statement(.{ .BlockClose = .{} }),
             else => return Error.IllegalToken,
         }
         if (label) |_| {
