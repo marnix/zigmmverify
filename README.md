@@ -34,4 +34,6 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 - Verify all proofs by executing and comparing for all statements.
 
+- Support $[ ... $] includes.
+
 - Create a proper main, rather than one that hardcodes set.mm.
