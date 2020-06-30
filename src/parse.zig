@@ -11,19 +11,20 @@ const eqs = tokenize.eqs;
 const TokenList = tokenize.TokenList;
 const TokenIterator = tokenize.TokenIterator;
 
-const StatementType = enum { C, V, D //, F, E, D, A, P, BlockOpen, BlockClose
+const StatementType = enum { C, V, F, D //, E, A, P, BlockOpen, BlockClose
 };
 
 const Statement = union(StatementType) {
     C: struct { constants: TokenList },
     V: struct { variables: TokenList },
-    //...
+    F: struct { kind: Token, variable: Token },
     D: struct { variables: TokenList },
 
     fn deinit(self: *Statement, allocator: *Allocator) void {
         switch (self.*) {
             .C => self.*.C.constants.deinit(),
             .V => self.*.V.variables.deinit(),
+            .F => {},
             .D => self.*.D.variables.deinit(),
         }
         allocator.destroy(self);
@@ -61,7 +62,15 @@ const StatementIterator = struct {
             'v' => return self.statement(.{
                 .V = .{ .variables = try self.nextUntil("$.") },
             }),
-            //...
+            'f' => {
+                var t = try self.nextUntil("$.");
+                defer t.deinit();
+                if (t.count() < 2) return Error.Incomplete;
+                if (t.count() > 2) return Error.UnexpectedToken;
+                return self.statement(.{
+                    .F = .{ .kind = t.at(0).*, .variable = t.at(1).* },
+                });
+            },
             'd' => return self.statement(.{
                 .D = .{ .variables = try self.nextUntil("$.") },
             }),
@@ -92,6 +101,18 @@ fn forNext(statements: *StatementIterator, f: var) !void {
     const s = try statements.next();
     _ = f.do(s);
     s.?.deinit(std.testing.allocator);
+}
+
+test "parse $f declaration" {
+    var statements = StatementIterator.init(std.testing.allocator, "$f wff ph $.");
+    _ = try forNext(&statements, struct {
+        fn do(s: var) void {
+            expect(eq(s.?.F.kind, "wff"));
+            expect(eq(s.?.F.variable, "ph"));
+        }
+    });
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
 }
 
 test "parse constant declaration" {
