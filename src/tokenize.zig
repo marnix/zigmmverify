@@ -6,15 +6,14 @@ const errors = @import("errors.zig");
 const Error = errors.Error;
 
 pub const Token = []const u8;
-pub const TokenList = std.SegmentedList(Token, 0); // TODO: Create custom?  E.g., AppendOnlyList singly-linked list.
+pub const TokenList = std.SegmentedList(Token, 0);
 
 pub const TokenIterator = struct {
     buffer: Token,
     index: u64 = 0,
     optError: ?Error = null,
 
-    // TODO: Let the error union be inferred?
-    fn next(self: *TokenIterator) Error!?Token {
+    fn next(self: *TokenIterator) !?Token {
         // return any error detected in the previous call
         if (self.optError) |err| {
             self.optError = null;
