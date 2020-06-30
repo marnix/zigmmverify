@@ -38,12 +38,18 @@ const Statement = union(StatementType) {
 const StatementIterator = struct {
     allocator: *Allocator,
     tokens: TokenIterator,
+    optStatement: ?*Statement = null,
 
     fn init(allocator: *Allocator, buffer: Token) StatementIterator {
         return StatementIterator{ .allocator = allocator, .tokens = TokenIterator{ .buffer = buffer } };
     }
 
     fn next(self: *StatementIterator) !?*Statement {
+        // return any statement detected in the previous call
+        if (self.optStatement) |s| {
+            self.optStatement = null;
+            return s;
+        }
         // get next token
         var token = (try self.tokens.next()) orelse {
             // we have seen the last Token, so we have seen the last Statement, end of iteration
@@ -58,36 +64,44 @@ const StatementIterator = struct {
         }
         if (token[0] != '$') return Error.UnexpectedToken;
         if (token.len != 2) return Error.IllegalToken;
+        var result: *Statement = undefined;
         switch (token[1]) { // handle the $x command
-            // TODO check for UnexpectedLabel
-            'c' => return self.statement(.{
-                .C = .{ .constants = try self.nextUntil("$.") },
-            }),
-            'v' => return self.statement(.{
-                .V = .{ .variables = try self.nextUntil("$.") },
-            }),
+            'c' => {
+                result = try self.statement(.{
+                    .C = .{ .constants = try self.nextUntil("$.") },
+                });
+            },
+            'v' => {
+                result = try self.statement(.{
+                    .V = .{ .variables = try self.nextUntil("$.") },
+                });
+            },
             'f' => {
                 var t = try self.nextUntil("$.");
                 defer t.deinit();
                 if (t.count() < 2) return Error.Incomplete;
                 if (t.count() > 2) return Error.UnexpectedToken;
-                return self.statement(.{
+                result = try self.statement(.{
                     .F = .{ .kind = t.at(0).*, .variable = t.at(1).* },
                 });
             },
             'e' => {
-                return self.statement(.{
+                defer label = null;
+                result = try self.statement(.{
                     .E = .{
                         .label = label orelse return Error.MissingLabel,
                         .expression = try self.nextUntil("$."),
                     },
                 });
             },
-            'd' => return self.statement(.{
-                .D = .{ .variables = try self.nextUntil("$.") },
-            }),
+            'd' => {
+                result = try self.statement(.{
+                    .D = .{ .variables = try self.nextUntil("$.") },
+                });
+            },
             'a' => {
-                return self.statement(.{
+                defer label = null;
+                result = try self.statement(.{
                     .A = .{
                         .label = label orelse return Error.MissingLabel,
                         .expression = try self.nextUntil("$."),
@@ -96,6 +110,11 @@ const StatementIterator = struct {
             },
             else => return Error.IllegalToken,
         }
+        if (label) |_| {
+            self.optStatement = result;
+            return Error.UnexpectedLabel;
+        }
+        return result;
     }
 
     fn nextUntil(self: *StatementIterator, terminator: Token) !TokenList {
@@ -129,6 +148,18 @@ test "parse $f declaration" {
         fn do(s: var) void {
             expect(eq(s.?.F.kind, "wff"));
             expect(eq(s.?.F.variable, "ph"));
+        }
+    });
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "check error for label on $d" {
+    var statements = StatementIterator.init(std.testing.allocator, "xfreeinA $d A x $.");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    _ = try forNext(&statements, struct {
+        fn do(s: var) void {
+            expect(eqs(s.?.D.variables, &[_]Token{ "A", "x" }));
         }
     });
     expect((try statements.next()) == null);
