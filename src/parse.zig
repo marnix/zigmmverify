@@ -197,6 +197,13 @@ test "check error for label on $d" {
     expect((try statements.next()) == null);
 }
 
+test "check error for unknown command" {
+    var statements = StatementIterator.init(std.testing.allocator, "$Q");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
 test "parse constant declaration" {
     var statements = StatementIterator.init(std.testing.allocator, "$c wff |- $.");
     _ = try forNext(&statements, struct {
@@ -208,7 +215,6 @@ test "parse constant declaration" {
     expect((try statements.next()) == null);
 }
 
-// TODO: add more tests for checking error values
 
 test "parse empty file" {
     var statements = StatementIterator.init(std.testing.allocator, "");
