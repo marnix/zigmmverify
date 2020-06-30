@@ -11,21 +11,25 @@ const eqs = tokenize.eqs;
 const TokenList = tokenize.TokenList;
 const TokenIterator = tokenize.TokenIterator;
 
-const StatementType = enum { C, V, F, D //, E, A, P, BlockOpen, BlockClose
+const StatementType = enum { C, V, F, E, D, A // , P, BlockOpen, BlockClose
 };
 
 const Statement = union(StatementType) {
     C: struct { constants: TokenList },
     V: struct { variables: TokenList },
     F: struct { kind: Token, variable: Token },
+    E: struct { label: Token, expression: TokenList },
     D: struct { variables: TokenList },
+    A: struct { label: Token, expression: TokenList },
 
     fn deinit(self: *Statement, allocator: *Allocator) void {
         switch (self.*) {
             .C => self.*.C.constants.deinit(),
             .V => self.*.V.variables.deinit(),
             .F => {},
+            .E => self.*.E.expression.deinit(),
             .D => self.*.D.variables.deinit(),
+            .A => self.*.A.expression.deinit(),
         }
         allocator.destroy(self);
     }
@@ -54,8 +58,8 @@ const StatementIterator = struct {
         }
         if (token[0] != '$') return Error.UnexpectedToken;
         if (token.len != 2) return Error.IllegalToken;
-        // handle the $x command
-        switch (token[1]) {
+        switch (token[1]) { // handle the $x command
+            // TODO check for UnexpectedLabel
             'c' => return self.statement(.{
                 .C = .{ .constants = try self.nextUntil("$.") },
             }),
@@ -71,9 +75,25 @@ const StatementIterator = struct {
                     .F = .{ .kind = t.at(0).*, .variable = t.at(1).* },
                 });
             },
+            'e' => {
+                return self.statement(.{
+                    .E = .{
+                        .label = label orelse return Error.MissingLabel,
+                        .expression = try self.nextUntil("$."),
+                    },
+                });
+            },
             'd' => return self.statement(.{
                 .D = .{ .variables = try self.nextUntil("$.") },
             }),
+            'a' => {
+                return self.statement(.{
+                    .A = .{
+                        .label = label orelse return Error.MissingLabel,
+                        .expression = try self.nextUntil("$."),
+                    },
+                });
+            },
             else => return Error.IllegalToken,
         }
     }

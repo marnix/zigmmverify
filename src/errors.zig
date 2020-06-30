@@ -1,3 +1,3 @@
 const std = @import("std");
 
-pub const Error = error{ IllegalCharacter, Incomplete, UnexpectedToken, IllegalToken };
+pub const Error = error{ IllegalCharacter, Incomplete, UnexpectedToken, IllegalToken, MissingLabel, UnexpectedLabel };
