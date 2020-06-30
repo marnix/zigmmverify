@@ -58,7 +58,7 @@ const StatementIterator = struct {
             return s;
         }
         // get next token
-        var token = (try self.tokens.next()) orelse {
+        var token = (try self.nextToken()) orelse {
             // we have seen the last Token, so we have seen the last Statement, end of iteration
             return null;
         };
@@ -67,7 +67,7 @@ const StatementIterator = struct {
         while (label == null) {
             if (token[0] == '$') break;
             label = token;
-            token = (try self.tokens.next()) orelse return Error.Incomplete;
+            token = (try self.nextToken()) orelse return Error.Incomplete;
         }
         if (token[0] != '$') return Error.UnexpectedToken;
         if (token.len != 2) return Error.IllegalToken;
@@ -141,10 +141,23 @@ const StatementIterator = struct {
         return result;
     }
 
-    fn nextUntil(self: *StatementIterator, terminator: Token) !TokenList {
+    fn nextToken(self: *StatementIterator) !?Token {
+        while (true) {
+            const result = try self.tokens.next();
+            if (result) |token| {
+                if (eq(token, "$(")) {
+                    (try self.nextUntil("$)")).deinit();
+                    continue;
+                }
+            }
+            return result;
+        }
+    }
+
+    fn nextUntil(self: *StatementIterator, terminator: Token) (Error || Allocator.Error)!TokenList {
         var result = TokenList.init(self.allocator);
         while (true) {
-            const token = (try self.tokens.next()) orelse return Error.Incomplete;
+            const token = (try self.nextToken()) orelse return Error.Incomplete;
             if (eq(token, terminator)) break;
             _ = try result.push(token);
         }
@@ -221,6 +234,11 @@ test "parse constant declaration" {
     expect((try statements.next()) == null);
 }
 
+test "parse comment" {
+    var statements = StatementIterator.init(std.testing.allocator, "$( a $[ b.mm $] c $)");
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
 
 test "parse empty file" {
     var statements = StatementIterator.init(std.testing.allocator, "");
