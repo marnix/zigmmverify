@@ -16,7 +16,7 @@ const StatementType = enum { C, V, F, E, D, A, P, BlockOpen, BlockClose };
 const Statement = union(StatementType) {
     C: struct { constants: TokenList },
     V: struct { variables: TokenList },
-    F: struct { kind: Token, variable: Token },
+    F: struct { label: Token, kind: Token, variable: Token },
     E: struct { label: Token, expression: TokenList },
     D: struct { variables: TokenList },
     A: struct { label: Token, expression: TokenList },
@@ -84,12 +84,17 @@ const StatementIterator = struct {
                 });
             },
             'f' => {
+                defer label = null;
                 var t = try self.nextUntil("$.");
                 defer t.deinit();
                 if (t.count() < 2) return Error.Incomplete;
                 if (t.count() > 2) return Error.UnexpectedToken;
                 result = try self.statement(.{
-                    .F = .{ .kind = t.at(0).*, .variable = t.at(1).* },
+                    .F = .{
+                        .label = label orelse return Error.MissingLabel,
+                        .kind = t.at(0).*,
+                        .variable = t.at(1).*,
+                    },
                 });
             },
             'e' => {
@@ -174,9 +179,10 @@ test "parse $p declaration" {
 }
 
 test "parse $f declaration" {
-    var statements = StatementIterator.init(std.testing.allocator, "$f wff ph $.");
+    var statements = StatementIterator.init(std.testing.allocator, "wph $f wff ph $.");
     _ = try forNext(&statements, struct {
         fn do(s: var) void {
+            expect(eq(s.?.F.label, "wph"));
             expect(eq(s.?.F.kind, "wff"));
             expect(eq(s.?.F.variable, "ph"));
         }
