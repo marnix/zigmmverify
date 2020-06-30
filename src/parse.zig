@@ -11,17 +11,20 @@ const eqs = tokenize.eqs;
 const TokenList = tokenize.TokenList;
 const TokenIterator = tokenize.TokenIterator;
 
-const StatementType = enum { C, V //, F, E, D, A, P, BlockOpen, BlockClose
+const StatementType = enum { C, V, D //, F, E, D, A, P, BlockOpen, BlockClose
 };
 
 const Statement = union(StatementType) {
     C: struct { constants: TokenList },
     V: struct { variables: TokenList },
+    //...
+    D: struct { variables: TokenList },
 
     fn deinit(self: *Statement, allocator: *Allocator) void {
         switch (self.*) {
             .C => self.*.C.constants.deinit(),
             .V => self.*.V.variables.deinit(),
+            .D => self.*.D.variables.deinit(),
         }
         allocator.destroy(self);
     }
@@ -57,6 +60,10 @@ const StatementIterator = struct {
             }),
             'v' => return self.statement(.{
                 .V = .{ .variables = try self.nextUntil("$.") },
+            }),
+            //...
+            'd' => return self.statement(.{
+                .D = .{ .variables = try self.nextUntil("$.") },
             }),
             else => return Error.IllegalToken,
         }
