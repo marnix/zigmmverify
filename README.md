@@ -28,7 +28,12 @@ Build using zig 0.6.0, then just run the resulting binary.
 - Loop over statements keeping a stack of blocks (for $d/$e/$f and $c/$v)
   and a map (for $p/$a).
 
-- For each statement, decompress the proof if necessary.
+- For each statement, run the proof.
+  For compressed proofs, don't decompress-then-run:
+  Decompression needs some context
+  (viz. the mandatory hypotheses for the $p statement,
+  and the number of hypotheses for each referenced statement),
+  and that context is more readily available while running the proof.
 
 - Execute proof against state (stack+map).
 
