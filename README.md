@@ -41,4 +41,6 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 - Support $[ ... $] includes.
 
+- Don't use 'error union' for Metamath verification errors.
+
 - Create a proper main, rather than one that hardcodes set.mm.
