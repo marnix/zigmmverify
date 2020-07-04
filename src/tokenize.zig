@@ -1,12 +1,14 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-const assert = std.debug.assert;
+usingnamespace @import("globals.zig");
 
 const errors = @import("errors.zig");
 const Error = errors.Error;
 
 pub const Token = []const u8;
 pub const TokenList = std.SegmentedList(Token, 0);
+pub const TokenSet = TokenMap(void);
+pub fn TokenMap(comptime T: type) type {
+    return std.StringHashMap(T); // key is Token == []const u8
+}
 
 pub const TokenIterator = struct {
     buffer: Token,

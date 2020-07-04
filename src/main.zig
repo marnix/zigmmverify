@@ -1,4 +1,5 @@
-const std = @import("std");
+usingnamespace @import("globals.zig");
+
 const verify = @import("verify.zig");
 
 pub fn main() !void {

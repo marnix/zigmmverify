@@ -1,4 +1,4 @@
-const std = @import("std");
+usingnamespace @import("globals.zig");
 
 pub const Error = error{
 // syntax errors

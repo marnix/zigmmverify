@@ -1,7 +1,4 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-
-const void_value: void = undefined;
+usingnamespace @import("globals.zig");
 
 const errors = @import("errors.zig");
 const Error = errors.Error;
@@ -9,6 +6,8 @@ const Error = errors.Error;
 const tokenize = @import("tokenize.zig");
 const Token = tokenize.Token;
 const TokenList = tokenize.TokenList;
+const TokenSet = tokenize.TokenSet;
+const TokenMap = tokenize.TokenMap;
 const parse = @import("parse.zig");
 
 const Expression = std.SegmentedList(struct { token: Token, cv: enum { C, V } }, 0);
@@ -18,13 +17,13 @@ const InferenceRule = struct {
     conclusion: Expression,
 };
 
-const Substitution = std.StringHashMap(Expression); // key is Token == []const u8
+const Substitution = TokenMap(Expression);
 const ProofState = std.SinglyLinkedList(Expression);
 
 const FEStatementList = std.SegmentedList(struct {
     label: Token, expression: Expression, ef: enum { F, E }
 }, 0);
-const InferenceRuleMap = std.StringHashMap(InferenceRule); // key is Token == []const u8
+const InferenceRuleMap = TokenMap(InferenceRule);
 const VerifyState = struct {
     const Self = @This();
 
@@ -33,6 +32,15 @@ const VerifyState = struct {
     activeStatements: InferenceRuleMap,
     scopes: ScopeStack,
 
+    fn init(allocator: *Allocator) Self {
+        return VerifyState{
+            .cStatements = TokenSet.init(allocator),
+            .activeFEStatements = FEStatementList.init(allocator),
+            .activeStatements = InferenceRuleMap.init(allocator),
+            .scopes = ScopeStack.init(),
+        };
+    }
+
     fn deinit(self: *Self) void {
         self.cStatements.deinit();
         self.activeFEStatements.deinit();
@@ -40,7 +48,6 @@ const VerifyState = struct {
         while (self.scopes.popFirst()) |_| {}
     }
 };
-const TokenSet = std.StringHashMap(void); // key is Token == []const u8
 const Scope = struct {
     vStatements: TokenSet,
     feStatements: TokenSet,
@@ -53,13 +60,7 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
     var n: u64 = 0;
     defer std.debug.warn("\nFound {0} statements!\n", .{n});
 
-    var state = VerifyState{
-        // TODO: move initialization into VerifyState struct
-        .cStatements = TokenSet.init(allocator),
-        .activeFEStatements = FEStatementList.init(allocator),
-        .activeStatements = InferenceRuleMap.init(allocator),
-        .scopes = ScopeStack.init(),
-    };
+    var state = VerifyState.init(allocator);
     defer state.deinit();
 
     var statements = parse.StatementIterator.init(allocator, buffer);

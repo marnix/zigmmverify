@@ -1,5 +1,4 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
+usingnamespace @import("globals.zig");
 
 const errors = @import("errors.zig");
 const Error = errors.Error;
