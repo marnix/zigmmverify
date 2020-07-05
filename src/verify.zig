@@ -73,6 +73,7 @@ const Scope = struct {
     }
 
     fn clone(self: Self) !Self {
+        // TODO: Instead of cloning, which seems expensive, do a lookup of statements along the stack.
         return Self{
             .vStatements = try self.vStatements.clone(),
             .feStatements = try self.feStatements.clone(),
@@ -116,10 +117,8 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 }
             },
             .BlockOpen => {
-                const firstNode = state.scopes.popFirst() orelse unreachable;
-                state.scopes.prepend(firstNode);
-                var newScope = try firstNode.data.clone();
-                state.scopes.prepend(&ScopeStack.Node{ .data = newScope });
+                const currentScopeNode = state.scopes.first orelse unreachable;
+                state.scopes.prepend(try state.scopes.createNode(try currentScopeNode.data.clone(), allocator));
             },
             .BlockClose => {
                 if (state.scopes.popFirst()) |firstNode| {
