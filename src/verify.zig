@@ -50,6 +50,7 @@ const VerifyState = struct {
         self.activeFEStatements.deinit();
         self.activeStatements.deinit();
         while (self.scopes.popFirst()) |node| {
+            node.data.deinit();
             self.scopes.destroyNode(node, self.allocator);
         }
     }
@@ -136,7 +137,6 @@ const expect = std.testing.expect;
 const expectError = std.testing.expectError;
 
 test "single variable" {
-    if (true) return error.SkipZigTest; // TODO Fix memory leak
     try verify("$v ph $.", std.testing.allocator);
 }
 
