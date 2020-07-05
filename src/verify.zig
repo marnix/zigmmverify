@@ -64,19 +64,22 @@ const Scope = struct {
 
     vStatements: TokenSet,
     feStatements: TokenSet,
+    outer: ?*Scope,
 
     fn init(allocator: *Allocator) Self {
         return Self{
             .vStatements = TokenSet.init(allocator),
             .feStatements = TokenSet.init(allocator),
+            .outer = null,
         };
     }
 
-    fn clone(self: Self) !Self {
+    fn clone(self: *Self) !Self {
         // TODO: Instead of cloning, which seems expensive, do a lookup of statements along the stack.
         return Self{
             .vStatements = try self.vStatements.clone(),
             .feStatements = try self.feStatements.clone(),
+            .outer = self,
         };
     }
 
@@ -85,7 +88,7 @@ const Scope = struct {
         self.feStatements.deinit();
     }
 };
-// TODO: Remove ScopeStack; instead just store a Scope, and add Scope.outer: ?Scope
+// TODO: Remove ScopeStack; instead just store a Scope, and use Scope.outer
 const ScopeStack = std.SinglyLinkedList(Scope);
 
 pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
