@@ -85,6 +85,7 @@ const Scope = struct {
         self.feStatements.deinit();
     }
 };
+// TODO: Remove ScopeStack; instead just store a Scope, and add Scope.outer: ?Scope
 const ScopeStack = std.SinglyLinkedList(Scope);
 
 pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
