@@ -75,7 +75,7 @@ const Scope = struct {
     }
 
     fn clone(self: *Self) !Self {
-        // TODO: Instead of cloning, which seems expensive, do a lookup of statements along the stack.
+        // Perhaps do a clone-on-write, instead of cloning pessimistically?
         return Self{
             .vStatements = try self.vStatements.clone(),
             .feStatements = try self.feStatements.clone(),
