@@ -39,7 +39,9 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 - Verify all proofs by executing and comparing for all statements.
 
-- Support $[ ... $] includes.
+- Support $[ ... $] includes.  (Presumably in the tokenizer.)
+
+- Identify the location (line/column) of at least the first error.
 
 - Don't use 'error union' for Metamath verification errors.
 
