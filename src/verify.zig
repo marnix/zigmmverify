@@ -27,6 +27,7 @@ const InferenceRuleMap = TokenMap(InferenceRule);
 const VerifyState = struct {
     const Self = @This();
 
+    allocator: *Allocator,
     cStatements: TokenSet,
     activeFEStatements: FEStatementList,
     activeStatements: InferenceRuleMap,
@@ -34,10 +35,9 @@ const VerifyState = struct {
 
     fn init(allocator: *Allocator) !Self {
         var scopes = ScopeStack.init();
-        var node = try allocator.create(ScopeStack.Node);
-        node.* = ScopeStack.Node{ .data = Scope.init(allocator) };
-        scopes.prepend(node);
+        scopes.prepend(try scopes.createNode(Scope.init(allocator), allocator));
         return Self{
+            .allocator = allocator,
             .cStatements = TokenSet.init(allocator),
             .activeFEStatements = FEStatementList.init(allocator),
             .activeStatements = InferenceRuleMap.init(allocator),
@@ -49,7 +49,9 @@ const VerifyState = struct {
         self.cStatements.deinit();
         self.activeFEStatements.deinit();
         self.activeStatements.deinit();
-        while (self.scopes.popFirst()) |_| {}
+        while (self.scopes.popFirst()) |node| {
+            self.scopes.destroyNode(node, self.allocator);
+        }
     }
 
     fn currentScope(self: *Self) *Scope {
@@ -139,6 +141,5 @@ test "single variable" {
 }
 
 test "duplicate constant" {
-    if (true) return error.SkipZigTest; // TODO Fix memory leak
     expectError(Error.Duplicate, verify("$c wff wff $.", std.testing.allocator));
 }
