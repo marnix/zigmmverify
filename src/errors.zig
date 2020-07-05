@@ -9,5 +9,5 @@ pub const Error = error{
     MissingLabel,
     UnexpectedLabel,
     // semantical errors
-    DuplicateConstant,
+    Duplicate,
 };

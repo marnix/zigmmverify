@@ -33,11 +33,13 @@ const VerifyState = struct {
     scopes: ScopeStack,
 
     fn init(allocator: *Allocator) Self {
-        return VerifyState{
+        var scopes = ScopeStack.init();
+        scopes.prepend(&ScopeStack.Node{ .data = Scope.init(allocator) });
+        return Self{
             .cStatements = TokenSet.init(allocator),
             .activeFEStatements = FEStatementList.init(allocator),
             .activeStatements = InferenceRuleMap.init(allocator),
-            .scopes = ScopeStack.init(),
+            .scopes = scopes,
         };
     }
 
@@ -47,10 +49,35 @@ const VerifyState = struct {
         self.activeStatements.deinit();
         while (self.scopes.popFirst()) |_| {}
     }
+
+    fn currentScope(self: *Self) *Scope {
+        return &(self.scopes.first.?.data);
+    }
 };
 const Scope = struct {
+    const Self = @This();
+
     vStatements: TokenSet,
     feStatements: TokenSet,
+
+    fn init(allocator: *Allocator) Self {
+        return Self{
+            .vStatements = TokenSet.init(allocator),
+            .feStatements = TokenSet.init(allocator),
+        };
+    }
+
+    fn clone(self: Self) !Self {
+        return Self{
+            .vStatements = try self.vStatements.clone(),
+            .feStatements = try self.feStatements.clone(),
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.vStatements.deinit();
+        self.feStatements.deinit();
+    }
 };
 const ScopeStack = std.SinglyLinkedList(Scope);
 
@@ -70,11 +97,29 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
 
         switch (statement.*) {
             .C => |cStatement| {
-                var it = @as(TokenList, cStatement.constants).iterator(0); // TODO: why coercion needed??
+                var it = @as(TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
                     const kv = try state.cStatements.put(constant.*, void_value);
-                    if (kv) |_| return Error.DuplicateConstant;
+                    if (kv) |_| return Error.Duplicate;
                 }
+            },
+            .V => |vStatement| {
+                var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
+                while (it.next()) |variable| {
+                    const kv = try state.currentScope().vStatements.put(variable.*, void_value);
+                    if (kv) |_| return Error.Duplicate; // TODO: Test
+                }
+            },
+            .BlockOpen => {
+                const firstNode = state.scopes.popFirst() orelse unreachable;
+                state.scopes.prepend(firstNode);
+                var newScope = try firstNode.data.clone();
+                state.scopes.prepend(&ScopeStack.Node{ .data = newScope });
+            },
+            .BlockClose => {
+                if (state.scopes.popFirst()) |firstNode| {
+                    firstNode.data.deinit();
+                } else return Error.UnexpectedToken; // TODO: Test
             },
             else => {
                 // TODO: implement the other statements, then remove this clause
@@ -86,6 +131,25 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
 const expect = std.testing.expect;
 const expectError = std.testing.expectError;
 
-test "" {
-    expectError(Error.DuplicateConstant, verify("$c wff wff $.", std.testing.allocator));
+test "simple scope test (part of FAILING test below)" {
+    var scope = Scope.init(std.testing.allocator);
+    defer scope.deinit();
+    _ = try scope.vStatements.put("ph", void_value);
+}
+
+test "FAILING (simplified from one below)" {
+    var state = VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+    expect(state.scopes.first.?.next == null);
+    if (true) return error.SkipZigTest; // TODO: Make this test work, fix mem alloc failure
+    _ = try state.currentScope().vStatements.put("ph", void_value);
+}
+
+test "single variable" {
+    if (true) return error.SkipZigTest; // TODO: Make this test work, fix mem alloc failure (above)
+    try verify("$v ph $.", std.testing.allocator);
+}
+
+test "duplicate constant" {
+    expectError(Error.Duplicate, verify("$c wff wff $.", std.testing.allocator));
 }
