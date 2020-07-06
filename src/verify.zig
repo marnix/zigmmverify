@@ -107,6 +107,7 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
 
         switch (statement.*) {
             .C => |cStatement| {
+                if (state.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
                 var it = @as(TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
                     const kv = try state.constants.put(constant.*, void_value);
@@ -143,6 +144,10 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
 
 const expect = std.testing.expect;
 const expectError = std.testing.expectError;
+
+test "no constant allowed in nested scope" {
+    expectError(Error.UnexpectedToken, verify("${ $c wff $. $}", std.testing.allocator));
+}
 
 test "nested variable" {
     try verify("$v ph $. ${ $v ps $. $} $v ps $.", std.testing.allocator);
