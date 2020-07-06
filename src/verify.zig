@@ -131,7 +131,7 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
             .BlockClose => {
                 if (state.currentScopeDiff) |scopeDiff| {
                     scopeDiff.pop();
-                } else return Error.UnexpectedToken; // TODO: Test
+                } else return Error.UnexpectedToken;
             },
             else => {
                 // TODO: implement the other statements, then remove this clause
