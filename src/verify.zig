@@ -32,7 +32,7 @@ const VerifyState = struct {
     variables: TokenSet,
     activeFEStatements: FEStatementList,
     activeStatements: InferenceRuleMap,
-    currentScope: ?*Scope,
+    currentScopeDiff: ?*ScopeDiff,
 
     fn init(allocator: *Allocator) !Self {
         return Self{
@@ -41,7 +41,7 @@ const VerifyState = struct {
             .variables = TokenSet.init(allocator),
             .activeFEStatements = FEStatementList.init(allocator),
             .activeStatements = InferenceRuleMap.init(allocator),
-            .currentScope = null,
+            .currentScopeDiff = null,
         };
     }
 
@@ -50,35 +50,43 @@ const VerifyState = struct {
         self.variables.deinit();
         self.activeFEStatements.deinit();
         self.activeStatements.deinit();
-        while (self.currentScope) |scope| {
-            scope.pop();
+        while (self.currentScopeDiff) |scopeDiff| {
+            scopeDiff.pop();
         }
     }
 };
-const Scope = struct {
+
+/// A ScopeDiff represents how a nested scope differs from the outer scope:
+/// which variables etc. will become inactive again at its ` $} ` statement.
+const ScopeDiff = struct {
     const Self = @This();
 
     state: *VerifyState,
-    optOuter: ?*Scope,
+    optOuter: ?*ScopeDiff,
+
     variables: TokenSet,
 
     fn push(state: *VerifyState) !void {
-        const newScope = try state.allocator.create(Scope);
-        newScope.* = Self{
+        const newScopeDiff = try state.allocator.create(ScopeDiff);
+        newScopeDiff.* = Self{
             .state = state,
-            .optOuter = state.currentScope,
+            .optOuter = state.currentScopeDiff,
+
             .variables = TokenSet.init(state.allocator),
         };
-        state.currentScope = newScope;
+
+        state.currentScopeDiff = newScopeDiff;
     }
 
     fn pop(self: *Self) void {
-        self.state.currentScope = self.optOuter;
+        self.state.currentScopeDiff = self.optOuter;
+
         var it = self.variables.iterator();
         while (it.next()) |kv| {
             _ = self.state.variables.remove(kv.key);
         }
         self.variables.deinit();
+
         self.state.allocator.destroy(self);
     }
 };
@@ -110,17 +118,18 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 while (it.next()) |variable| {
                     const kv = try state.variables.put(variable.*, void_value);
                     if (kv) |_| return Error.Duplicate;
-                    if (state.currentScope) |scope| {
-                        _ = try scope.variables.put(variable.*, void_value);
+                    if (state.currentScopeDiff) |scopeDiff| {
+                        // register that this $v will become inactive at the next $}
+                        _ = try scopeDiff.variables.put(variable.*, void_value);
                     }
                 }
             },
             .BlockOpen => {
-                try Scope.push(&state);
+                try ScopeDiff.push(&state);
             },
             .BlockClose => {
-                if (state.currentScope) |scope| {
-                    scope.pop();
+                if (state.currentScopeDiff) |scopeDiff| {
+                    scopeDiff.pop();
                 } else return Error.UnexpectedToken; // TODO: Test
             },
             else => {
