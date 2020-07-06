@@ -51,9 +51,7 @@ const VerifyState = struct {
         self.activeFEStatements.deinit();
         self.activeStatements.deinit();
         while (self.currentScope) |scope| {
-            const optOuter = scope.optOuter;
-            scope.deinit();
-            self.currentScope = optOuter;
+            scope.pop();
         }
     }
 };
@@ -64,20 +62,24 @@ const Scope = struct {
     optOuter: ?*Scope,
     variables: TokenSet,
 
-    fn init(state: *VerifyState, allocator: *Allocator) Self {
-        return Self{
+    fn push(state: *VerifyState) !void {
+        const newScope = try state.allocator.create(Scope);
+        newScope.* = Self{
             .state = state,
             .optOuter = state.currentScope,
-            .variables = TokenSet.init(allocator),
+            .variables = TokenSet.init(state.allocator),
         };
+        state.currentScope = newScope;
     }
 
-    fn deinit(self: *Self) void {
+    fn pop(self: *Self) void {
+        self.state.currentScope = self.optOuter;
         var it = self.variables.iterator();
         while (it.next()) |kv| {
             _ = self.state.variables.remove(kv.key);
         }
         self.variables.deinit();
+        self.state.allocator.destroy(self);
     }
 };
 
@@ -114,15 +116,11 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 }
             },
             .BlockOpen => {
-                const newScope = try allocator.create(Scope);
-                newScope.* = Scope.init(&state, allocator);
-                state.currentScope = newScope;
+                try Scope.push(&state);
             },
             .BlockClose => {
                 if (state.currentScope) |scope| {
-                    const optOuter = scope.optOuter;
-                    scope.deinit();
-                    state.currentScope = optOuter;
+                    scope.pop();
                 } else return Error.UnexpectedToken; // TODO: Test
             },
             else => {
@@ -135,8 +133,16 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
 const expect = std.testing.expect;
 const expectError = std.testing.expectError;
 
+test "nested variable" {
+    try verify("$v ph $. ${ $v ps $. $} $v ps $.", std.testing.allocator);
+}
+
+test "nested duplicate variable" {
+    expectError(Error.Duplicate, verify("$v ph $. ${ $v ph $. $}", std.testing.allocator));
+}
+
 test "duplicate variable" {
-    expectError(Error.Duplicate, verify("$c ph ps ph $.", std.testing.allocator));
+    expectError(Error.Duplicate, verify("$v ph ps ph $.", std.testing.allocator));
 }
 
 test "single variable" {
