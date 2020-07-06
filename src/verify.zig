@@ -110,18 +110,18 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 if (state.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
                 var it = @as(TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
-                    const kv = try state.constants.put(constant.*, void_value);
-                    if (kv) |_| return Error.Duplicate;
+                    const alreadyPresent = try state.constants.add(constant.*);
+                    if (alreadyPresent) return Error.Duplicate;
                 }
             },
             .V => |vStatement| {
                 var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
                 while (it.next()) |variable| {
-                    const kv = try state.variables.put(variable.*, void_value);
-                    if (kv) |_| return Error.Duplicate;
+                    const alreadyPresent = try state.variables.add(variable.*);
+                    if (alreadyPresent) return Error.Duplicate;
                     if (state.currentScopeDiff) |scopeDiff| {
                         // register that this $v will become inactive at the next $}
-                        _ = try scopeDiff.variables.put(variable.*, void_value);
+                        _ = try scopeDiff.variables.add(variable.*);
                     }
                 }
             },
