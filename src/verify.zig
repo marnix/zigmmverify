@@ -28,10 +28,14 @@ const VerifyState = struct {
     const Self = @This();
 
     allocator: *Allocator,
+
+    // TODO: Perhaps: Instead of keeping multiple sets, have a single map,
+    // which maps a Token to it meaning (= a tagged union object).
     constants: TokenSet,
     variables: TokenSet,
     activeFEStatements: FEStatementList,
     activeStatements: InferenceRuleMap,
+
     currentScopeDiff: ?*ScopeDiff,
 
     fn init(allocator: *Allocator) !Self {
