@@ -28,7 +28,7 @@ const VerifyState = struct {
     const Self = @This();
 
     allocator: *Allocator,
-    cStatements: TokenSet,
+    constants: TokenSet,
     activeFEStatements: FEStatementList,
     activeStatements: InferenceRuleMap,
     scopes: ScopeStack,
@@ -38,7 +38,7 @@ const VerifyState = struct {
         scopes.prepend(try scopes.createNode(Scope.init(allocator), allocator));
         return Self{
             .allocator = allocator,
-            .cStatements = TokenSet.init(allocator),
+            .constants = TokenSet.init(allocator),
             .activeFEStatements = FEStatementList.init(allocator),
             .activeStatements = InferenceRuleMap.init(allocator),
             .scopes = scopes,
@@ -46,7 +46,7 @@ const VerifyState = struct {
     }
 
     fn deinit(self: *Self) void {
-        self.cStatements.deinit();
+        self.constants.deinit();
         self.activeFEStatements.deinit();
         self.activeStatements.deinit();
         while (self.scopes.popFirst()) |node| {
@@ -63,13 +63,11 @@ const Scope = struct {
     const Self = @This();
 
     vStatements: TokenSet,
-    feStatements: TokenSet,
     outer: ?*Scope,
 
     fn init(allocator: *Allocator) Self {
         return Self{
             .vStatements = TokenSet.init(allocator),
-            .feStatements = TokenSet.init(allocator),
             .outer = null,
         };
     }
@@ -78,14 +76,12 @@ const Scope = struct {
         // Perhaps do a clone-on-write, instead of cloning pessimistically?
         return Self{
             .vStatements = try self.vStatements.clone(),
-            .feStatements = try self.feStatements.clone(),
             .outer = self,
         };
     }
 
     fn deinit(self: *Self) void {
         self.vStatements.deinit();
-        self.feStatements.deinit();
     }
 };
 // TODO: Remove ScopeStack; instead just store a Scope, and use Scope.outer
@@ -109,7 +105,7 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
             .C => |cStatement| {
                 var it = @as(TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
-                    const kv = try state.cStatements.put(constant.*, void_value);
+                    const kv = try state.constants.put(constant.*, void_value);
                     if (kv) |_| return Error.Duplicate;
                 }
             },
