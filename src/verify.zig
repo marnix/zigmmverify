@@ -24,59 +24,53 @@ const FEStatementList = std.SegmentedList(struct {
     label: Token, expression: Expression, ef: enum { F, E }
 }, 0);
 const InferenceRuleMap = TokenMap(InferenceRule);
+
+const MeaningType = enum { C, V };
+const Meaning = union(MeaningType) {
+    C: void,
+    V: void,
+};
+
 const VerifyState = struct {
     const Self = @This();
 
     allocator: *Allocator,
 
-    // TODO: Perhaps: Instead of keeping multiple sets, have a single map,
-    // which maps a Token to it meaning (= a tagged union object).
-    constants: TokenSet,
-    variables: TokenSet,
-    activeFEStatements: FEStatementList,
-    activeStatements: InferenceRuleMap,
-
+    /// what each active token means
+    meanings: TokenMap(Meaning),
     currentScopeDiff: ?*ScopeDiff,
 
     fn init(allocator: *Allocator) !Self {
         return Self{
             .allocator = allocator,
-            .constants = TokenSet.init(allocator),
-            .variables = TokenSet.init(allocator),
-            .activeFEStatements = FEStatementList.init(allocator),
-            .activeStatements = InferenceRuleMap.init(allocator),
+            .meanings = TokenMap(Meaning).init(allocator),
             .currentScopeDiff = null,
         };
     }
 
     fn deinit(self: *Self) void {
-        self.constants.deinit();
-        self.variables.deinit();
-        self.activeFEStatements.deinit();
-        self.activeStatements.deinit();
+        self.meanings.deinit();
         while (self.currentScopeDiff) |scopeDiff| {
             scopeDiff.pop();
         }
     }
 };
 
-/// A ScopeDiff represents how a nested scope differs from the outer scope:
-/// which variables etc. will become inactive again at its ` $} ` statement.
+/// A ScopeDiff represents how a nested scope differs from its outer scope:
+/// which tokens and labels will become inactive again at its ` $} ` statement.
 const ScopeDiff = struct {
     const Self = @This();
 
     state: *VerifyState,
     optOuter: ?*ScopeDiff,
-
-    variables: TokenSet,
+    activeTokens: TokenSet,
 
     fn push(state: *VerifyState) !void {
         const newScopeDiff = try state.allocator.create(ScopeDiff);
         newScopeDiff.* = Self{
             .state = state,
             .optOuter = state.currentScopeDiff,
-
-            .variables = TokenSet.init(state.allocator),
+            .activeTokens = TokenSet.init(state.allocator),
         };
 
         state.currentScopeDiff = newScopeDiff;
@@ -85,11 +79,11 @@ const ScopeDiff = struct {
     fn pop(self: *Self) void {
         self.state.currentScopeDiff = self.optOuter;
 
-        var it = self.variables.iterator();
+        var it = self.activeTokens.iterator();
         while (it.next()) |kv| {
-            _ = self.state.variables.remove(kv.key);
+            _ = self.state.meanings.remove(kv.key);
         }
-        self.variables.deinit();
+        self.activeTokens.deinit();
 
         self.state.allocator.destroy(self);
     }
@@ -114,18 +108,17 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 if (state.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
                 var it = @as(TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
-                    const alreadyPresent = try state.constants.add(constant.*);
-                    if (alreadyPresent) return Error.Duplicate;
+                    const kv = try state.meanings.put(constant.*, Meaning{ .C = void_value });
+                    if (kv) |_| return Error.Duplicate;
                 }
             },
             .V => |vStatement| {
                 var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
                 while (it.next()) |variable| {
-                    const alreadyPresent = try state.variables.add(variable.*);
-                    if (alreadyPresent) return Error.Duplicate;
+                    const kv = try state.meanings.put(variable.*, Meaning{ .V = void_value });
+                    if (kv) |_| return Error.Duplicate;
                     if (state.currentScopeDiff) |scopeDiff| {
-                        // register that this $v will become inactive at the next $}
-                        _ = try scopeDiff.variables.add(variable.*);
+                        _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
                     }
                 }
             },
@@ -148,6 +141,10 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
 
 const expect = std.testing.expect;
 const expectError = std.testing.expectError;
+
+test "token is either constant or variable, not both" {
+    expectError(Error.Duplicate, verify("$c wff $. $v wff $.", std.testing.allocator));
+}
 
 test "no constant allowed in nested scope" {
     expectError(Error.UnexpectedToken, verify("${ $c wff $. $}", std.testing.allocator));
