@@ -107,7 +107,7 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
                 while (it.next()) |variable| {
                     const kv = try state.variables.put(variable.*, void_value);
-                    if (kv) |_| return Error.Duplicate; // TODO: Test
+                    if (kv) |_| return Error.Duplicate;
                     if (state.currentScope) |scope| {
                         _ = try scope.variables.put(variable.*, void_value);
                     }
@@ -134,6 +134,10 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
 
 const expect = std.testing.expect;
 const expectError = std.testing.expectError;
+
+test "duplicate variable" {
+    expectError(Error.Duplicate, verify("$c ph ps ph $.", std.testing.allocator));
+}
 
 test "single variable" {
     try verify("$v ph $.", std.testing.allocator);
