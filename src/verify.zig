@@ -29,63 +29,57 @@ const VerifyState = struct {
 
     allocator: *Allocator,
     constants: TokenSet,
+    variables: TokenSet,
     activeFEStatements: FEStatementList,
     activeStatements: InferenceRuleMap,
-    scopes: ScopeStack,
+    currentScope: ?*Scope,
 
     fn init(allocator: *Allocator) !Self {
-        var scopes = ScopeStack.init();
-        scopes.prepend(try scopes.createNode(Scope.init(allocator), allocator));
         return Self{
             .allocator = allocator,
             .constants = TokenSet.init(allocator),
+            .variables = TokenSet.init(allocator),
             .activeFEStatements = FEStatementList.init(allocator),
             .activeStatements = InferenceRuleMap.init(allocator),
-            .scopes = scopes,
+            .currentScope = null,
         };
     }
 
     fn deinit(self: *Self) void {
         self.constants.deinit();
+        self.variables.deinit();
         self.activeFEStatements.deinit();
         self.activeStatements.deinit();
-        while (self.scopes.popFirst()) |node| {
-            node.data.deinit();
-            self.scopes.destroyNode(node, self.allocator);
+        while (self.currentScope) |scope| {
+            const optOuter = scope.optOuter;
+            scope.deinit();
+            self.currentScope = optOuter;
         }
-    }
-
-    fn currentScope(self: *Self) *Scope {
-        return &(self.scopes.first.?.data);
     }
 };
 const Scope = struct {
     const Self = @This();
 
-    vStatements: TokenSet,
-    outer: ?*Scope,
+    state: *VerifyState,
+    optOuter: ?*Scope,
+    variables: TokenSet,
 
-    fn init(allocator: *Allocator) Self {
+    fn init(state: *VerifyState, allocator: *Allocator) Self {
         return Self{
-            .vStatements = TokenSet.init(allocator),
-            .outer = null,
-        };
-    }
-
-    fn clone(self: *Self) !Self {
-        // Perhaps do a clone-on-write, instead of cloning pessimistically?
-        return Self{
-            .vStatements = try self.vStatements.clone(),
-            .outer = self,
+            .state = state,
+            .optOuter = state.currentScope,
+            .variables = TokenSet.init(allocator),
         };
     }
 
     fn deinit(self: *Self) void {
-        self.vStatements.deinit();
+        var it = self.variables.iterator();
+        while (it.next()) |kv| {
+            _ = self.state.variables.remove(kv.key);
+        }
+        self.variables.deinit();
     }
 };
-// TODO: Remove ScopeStack; instead just store a Scope, and use Scope.outer
-const ScopeStack = std.SinglyLinkedList(Scope);
 
 pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
     errdefer |err| std.debug.warn("\nError {0} happened...\n", .{err});
@@ -112,17 +106,23 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
             .V => |vStatement| {
                 var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
                 while (it.next()) |variable| {
-                    const kv = try state.currentScope().vStatements.put(variable.*, void_value);
+                    const kv = try state.variables.put(variable.*, void_value);
                     if (kv) |_| return Error.Duplicate; // TODO: Test
+                    if (state.currentScope) |scope| {
+                        _ = try scope.variables.put(variable.*, void_value);
+                    }
                 }
             },
             .BlockOpen => {
-                const currentScopeNode = state.scopes.first orelse unreachable;
-                state.scopes.prepend(try state.scopes.createNode(try currentScopeNode.data.clone(), allocator));
+                const newScope = try allocator.create(Scope);
+                newScope.* = Scope.init(&state, allocator);
+                state.currentScope = newScope;
             },
             .BlockClose => {
-                if (state.scopes.popFirst()) |firstNode| {
-                    firstNode.data.deinit();
+                if (state.currentScope) |scope| {
+                    const optOuter = scope.optOuter;
+                    scope.deinit();
+                    state.currentScope = optOuter;
                 } else return Error.UnexpectedToken; // TODO: Test
             },
             else => {
