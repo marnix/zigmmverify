@@ -137,6 +137,8 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
             },
         }
     }
+
+    if (state.currentScopeDiff) |_| return Error.Incomplete; // unclosed $}
 }
 
 const expect = std.testing.expect;
@@ -148,6 +150,18 @@ test "nested variable" {
 
 test "nested duplicate variable" {
     expectError(Error.Duplicate, verify("$v ph $. ${ $v ph $. $}", std.testing.allocator));
+}
+
+test "unopened block" {
+    expectError(Error.UnexpectedToken, verify("$}", std.testing.allocator));
+}
+
+test "unclosed block" {
+    expectError(Error.Incomplete, verify("${", std.testing.allocator));
+}
+
+test "multiple blocks" {
+    try verify("${ $} ${ ${ $} $}", std.testing.allocator);
 }
 
 test "duplicate variable" {
