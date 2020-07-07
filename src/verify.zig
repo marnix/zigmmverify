@@ -5,13 +5,12 @@ const Error = errors.Error;
 
 const tokenize = @import("tokenize.zig");
 const Token = tokenize.Token;
-const TokenList = tokenize.TokenList;
 const TokenSet = tokenize.TokenSet;
 const TokenMap = tokenize.TokenMap;
 const parse = @import("parse.zig");
 
-const Expression = std.SegmentedList(struct { token: Token, cv: enum { C, V } }, 0);
-const HypothesesList = std.SegmentedList(struct { expression: Expression, isF: bool }, 0);
+const Expression = [_]struct { token: Token, cv: enum { C, V } };
+const HypothesesList = [_]struct { expression: Expression, isF: bool };
 const InferenceRule = struct {
     hypotheses: HypothesesList,
     conclusion: Expression,
@@ -25,6 +24,7 @@ const FEStatementList = std.SegmentedList(struct {
 }, 0);
 const InferenceRuleMap = TokenMap(InferenceRule);
 
+// TODO: Find a better name; {Token,Label,Symbol}Interpretation?
 const MeaningType = enum { C, V };
 const Meaning = union(MeaningType) {
     C: void,
@@ -81,7 +81,9 @@ const ScopeDiff = struct {
 
         var it = self.activeTokens.iterator();
         while (it.next()) |kv| {
-            _ = self.state.meanings.remove(kv.key);
+            if (self.state.meanings.remove(kv.key)) |_| {} else {
+                std.debug.warn("\nTODO: insert meaning for token {0}.\n", .{kv.key});
+            }
         }
         self.activeTokens.deinit();
 
@@ -106,20 +108,30 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
         switch (statement.*) {
             .C => |cStatement| {
                 if (state.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
-                var it = @as(TokenList, cStatement.constants).iterator(0);
+                var it = @as(tokenize.TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
                     const kv = try state.meanings.put(constant.*, Meaning{ .C = void_value });
                     if (kv) |_| return Error.Duplicate;
                 }
             },
             .V => |vStatement| {
-                var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
+                var it = @as(tokenize.TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
                 while (it.next()) |variable| {
                     const kv = try state.meanings.put(variable.*, Meaning{ .V = void_value });
                     if (kv) |_| return Error.Duplicate;
                     if (state.currentScopeDiff) |scopeDiff| {
                         _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
                     }
+                }
+            },
+            .F => |fStatement| {
+                if (state.currentScopeDiff) |scopeDiff| {
+                    _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
+                }
+            },
+            .E => |eStatement| {
+                if (state.currentScopeDiff) |scopeDiff| {
+                    _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
                 }
             },
             .BlockOpen => {
