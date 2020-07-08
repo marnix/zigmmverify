@@ -12,20 +12,30 @@ const parse = @import("parse.zig");
 
 const ExpressionChild = struct { token: Token, cv: enum { C, V } };
 const Expression = []ExpressionChild;
-const HypothesesList = []struct { expression: Expression, isF: bool };
+const Hypothesis = struct { expression: Expression, isF: bool };
+const HypothesisList = []Hypothesis;
 const InferenceRule = struct {
-    hypotheses: HypothesesList,
+    hypotheses: HypothesisList,
     conclusion: Expression,
+
+    fn fromHypothesis(state: *VerifyState, tokens: TokenList) !InferenceRule {
+        const expression = try state.expressionOf(tokens);
+        return InferenceRule{
+            .hypotheses = &[_]Hypothesis{},
+            .conclusion = expression,
+        };
+    }
 };
 
 const Substitution = TokenMap(Expression);
 const ProofState = std.SinglyLinkedList(Expression);
 
 // TODO: Find a better name; {Token,Label,Symbol}Interpretation?
-const MeaningType = enum { C, V };
+const MeaningType = enum { C, V, Rule };
 const Meaning = union(MeaningType) {
     C: void,
     V: void,
+    Rule: InferenceRule,
 };
 
 const VerifyState = struct {
@@ -46,7 +56,6 @@ const VerifyState = struct {
     }
 
     fn deinit(self: *Self) void {
-        // TODO: Deinit every meaning
         self.meanings.deinit();
         while (self.currentScopeDiff) |scopeDiff| {
             scopeDiff.pop();
@@ -144,6 +153,8 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 }
             },
             .E => |eStatement| {
+                const kv = try state.meanings.put(eStatement.label, Meaning{ .Rule = try InferenceRule.fromHypothesis(&state, eStatement.expression) });
+                if (kv) |_| return Error.Duplicate;
                 if (state.currentScopeDiff) |scopeDiff| {
                     _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
                 }
