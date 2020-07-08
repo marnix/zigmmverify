@@ -5,12 +5,14 @@ const Error = errors.Error;
 
 const tokenize = @import("tokenize.zig");
 const Token = tokenize.Token;
+const TokenList = tokenize.TokenList;
 const TokenSet = tokenize.TokenSet;
 const TokenMap = tokenize.TokenMap;
 const parse = @import("parse.zig");
 
-const Expression = [_]struct { token: Token, cv: enum { C, V } };
-const HypothesesList = [_]struct { expression: Expression, isF: bool };
+const ExpressionChild = struct { token: Token, cv: enum { C, V } };
+const Expression = []ExpressionChild;
+const HypothesesList = []struct { expression: Expression, isF: bool };
 const InferenceRule = struct {
     hypotheses: HypothesesList,
     conclusion: Expression,
@@ -18,11 +20,6 @@ const InferenceRule = struct {
 
 const Substitution = TokenMap(Expression);
 const ProofState = std.SinglyLinkedList(Expression);
-
-const FEStatementList = std.SegmentedList(struct {
-    label: Token, expression: Expression, ef: enum { F, E }
-}, 0);
-const InferenceRuleMap = TokenMap(InferenceRule);
 
 // TODO: Find a better name; {Token,Label,Symbol}Interpretation?
 const MeaningType = enum { C, V };
@@ -49,10 +46,21 @@ const VerifyState = struct {
     }
 
     fn deinit(self: *Self) void {
+        // TODO: Deinit every meaning
         self.meanings.deinit();
         while (self.currentScopeDiff) |scopeDiff| {
             scopeDiff.pop();
         }
+    }
+
+    fn expressionOf(self: *Self, tokens: TokenList) !*Expression {
+        var result = try self.allocator.alloc(ExpressionChild, tokens.count());
+        var i: usize = 0;
+        var it = @as(TokenList, tokens).iterator(0);
+        while (it.next()) |cv| {
+            result[i] = .{ .token = cv.*, .cv = .C };
+        }
+        return &result;
     }
 };
 
@@ -108,14 +116,14 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
         switch (statement.*) {
             .C => |cStatement| {
                 if (state.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
-                var it = @as(tokenize.TokenList, cStatement.constants).iterator(0);
+                var it = @as(TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
                     const kv = try state.meanings.put(constant.*, Meaning{ .C = void_value });
                     if (kv) |_| return Error.Duplicate;
                 }
             },
             .V => |vStatement| {
-                var it = @as(tokenize.TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
+                var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
                 while (it.next()) |variable| {
                     const kv = try state.meanings.put(variable.*, Meaning{ .V = void_value });
                     if (kv) |_| return Error.Duplicate;
@@ -153,6 +161,24 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
 
 const expect = std.testing.expect;
 const expectError = std.testing.expectError;
+
+test "tokenlist to expression" {
+    var state = try VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+    _ = try state.meanings.put("wff", Meaning{ .C = void_value });
+    _ = try state.meanings.put("ph", Meaning{ .V = void_value });
+    var tokens = TokenList.init(std.testing.allocator);
+    defer tokens.deinit();
+    try tokens.push("wff");
+    try tokens.push("ph");
+
+    const expression = try state.expressionOf(tokens);
+    defer std.testing.allocator.destroy(expression);
+
+    expect(expression.len == 2);
+    //expect(ExpressionChild{ .token = "wff", .cv = .C } == expression[0]);
+    //expect(ExpressionChild{ .token = "wff", .cv = .V } == expression[0]);
+}
 
 test "token is either constant or variable, not both" {
     expectError(Error.Duplicate, verify("$c wff $. $v wff $.", std.testing.allocator));
