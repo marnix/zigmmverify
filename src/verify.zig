@@ -10,8 +10,8 @@ const TokenSet = tokenize.TokenSet;
 const TokenMap = tokenize.TokenMap;
 const parse = @import("parse.zig");
 
-const ExpressionChild = struct { token: Token, cv: enum { C, V } };
-const Expression = []ExpressionChild;
+const CVToken = struct { token: Token, cv: enum { C, V } };
+const Expression = []CVToken;
 const Hypothesis = struct { expression: Expression, isF: bool };
 const HypothesisList = []Hypothesis;
 const InferenceRule = struct {
@@ -31,10 +31,10 @@ const Substitution = TokenMap(Expression);
 const ProofState = std.SinglyLinkedList(Expression);
 
 // TODO: Find a better name; {Token,Label,Symbol}Interpretation?
-const MeaningType = enum { C, V, Rule };
+const MeaningType = enum { Constant, Variable, Rule };
 const Meaning = union(MeaningType) {
-    C: void,
-    V: void,
+    Constant: void,
+    Variable: void,
     Rule: InferenceRule,
 };
 
@@ -63,14 +63,14 @@ const VerifyState = struct {
     }
 
     fn expressionOf(self: *Self, tokens: TokenList) !Expression {
-        var result = try self.allocator.alloc(ExpressionChild, tokens.count());
+        var result = try self.allocator.alloc(CVToken, tokens.count());
         var i: usize = 0;
         var it = @as(TokenList, tokens).iterator(0);
         while (it.next()) |pToken| : (i += 1) {
             const kv = self.meanings.get(pToken.*) orelse return Error.UnexpectedToken; // TODO: test
             const isConstantToken = switch (kv.value) {
-                .C => true,
-                .V => false,
+                .Constant => true,
+                .Variable => false,
                 else => return Error.UnexpectedToken, // TODO: test
             };
             result[i] = .{ .token = pToken.*, .cv = if (isConstantToken) .C else .V };
@@ -133,14 +133,14 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 if (state.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
                 var it = @as(TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
-                    const kv = try state.meanings.put(constant.*, MeaningType.C);
+                    const kv = try state.meanings.put(constant.*, MeaningType.Constant);
                     if (kv) |_| return Error.Duplicate;
                 }
             },
             .V => |vStatement| {
                 var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
                 while (it.next()) |variable| {
-                    const kv = try state.meanings.put(variable.*, MeaningType.V);
+                    const kv = try state.meanings.put(variable.*, MeaningType.Variable);
                     if (kv) |_| return Error.Duplicate;
                     if (state.currentScopeDiff) |scopeDiff| {
                         _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
@@ -185,8 +185,8 @@ test "tokenlist to expression" {
     // TODO: Simplify this test case using a few helpers and/or refactorings.
     var state = try VerifyState.init(std.testing.allocator);
     defer state.deinit();
-    _ = try state.meanings.put("wff", MeaningType.C);
-    _ = try state.meanings.put("ph", MeaningType.V);
+    _ = try state.meanings.put("wff", MeaningType.Constant);
+    _ = try state.meanings.put("ph", MeaningType.Variable);
     var tokens = TokenList.init(std.testing.allocator);
     defer tokens.deinit();
     try tokens.push("wff");
