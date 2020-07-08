@@ -53,14 +53,20 @@ const VerifyState = struct {
         }
     }
 
-    fn expressionOf(self: *Self, tokens: TokenList) !*Expression {
+    fn expressionOf(self: *Self, tokens: TokenList) !Expression {
         var result = try self.allocator.alloc(ExpressionChild, tokens.count());
         var i: usize = 0;
         var it = @as(TokenList, tokens).iterator(0);
-        while (it.next()) |cv| {
-            result[i] = .{ .token = cv.*, .cv = .C };
+        while (it.next()) |pToken| : (i += 1) {
+            const kv = self.meanings.get(pToken.*) orelse return Error.UnexpectedToken; // TODO: test
+            const isConstantToken = switch (kv.value) {
+                .C => true,
+                .V => false,
+                else => return Error.UnexpectedToken, // TODO: test
+            };
+            result[i] = .{ .token = pToken.*, .cv = if (isConstantToken) .C else .V };
         }
-        return &result;
+        return result;
     }
 };
 
@@ -118,7 +124,7 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 if (state.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
                 var it = @as(TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
-                    const kv = try state.meanings.put(constant.*, Meaning{ .C = void_value });
+                    const kv = try state.meanings.put(constant.*, Meaning{ .C = void_value }); //TODO: Avoid 'void_value'?
                     if (kv) |_| return Error.Duplicate;
                 }
             },
@@ -161,8 +167,11 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
 
 const expect = std.testing.expect;
 const expectError = std.testing.expectError;
+const eq = tokenize.eq;
+const eqs = tokenize.eqs;
 
 test "tokenlist to expression" {
+    // TODO: Simplify this test case using a few helpers and/or refactorings.
     var state = try VerifyState.init(std.testing.allocator);
     defer state.deinit();
     _ = try state.meanings.put("wff", Meaning{ .C = void_value });
@@ -171,13 +180,16 @@ test "tokenlist to expression" {
     defer tokens.deinit();
     try tokens.push("wff");
     try tokens.push("ph");
+    expect(eqs(tokens, &[_]Token{ "wff", "ph" }));
 
     const expression = try state.expressionOf(tokens);
-    defer std.testing.allocator.destroy(expression);
+    defer std.testing.allocator.free(expression);
 
     expect(expression.len == 2);
-    //expect(ExpressionChild{ .token = "wff", .cv = .C } == expression[0]);
-    //expect(ExpressionChild{ .token = "wff", .cv = .V } == expression[0]);
+    expect(eq(expression[0].token, "wff"));
+    expect(expression[0].cv == .C);
+    expect(eq(expression[1].token, "ph"));
+    expect(expression[1].cv == .V);
 }
 
 test "token is either constant or variable, not both" {
