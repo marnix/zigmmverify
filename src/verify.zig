@@ -124,14 +124,14 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 if (state.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
                 var it = @as(TokenList, cStatement.constants).iterator(0);
                 while (it.next()) |constant| {
-                    const kv = try state.meanings.put(constant.*, Meaning{ .C = void_value }); //TODO: Avoid 'void_value'?
+                    const kv = try state.meanings.put(constant.*, MeaningType.C);
                     if (kv) |_| return Error.Duplicate;
                 }
             },
             .V => |vStatement| {
                 var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
                 while (it.next()) |variable| {
-                    const kv = try state.meanings.put(variable.*, Meaning{ .V = void_value });
+                    const kv = try state.meanings.put(variable.*, MeaningType.V);
                     if (kv) |_| return Error.Duplicate;
                     if (state.currentScopeDiff) |scopeDiff| {
                         _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
@@ -174,8 +174,8 @@ test "tokenlist to expression" {
     // TODO: Simplify this test case using a few helpers and/or refactorings.
     var state = try VerifyState.init(std.testing.allocator);
     defer state.deinit();
-    _ = try state.meanings.put("wff", Meaning{ .C = void_value });
-    _ = try state.meanings.put("ph", Meaning{ .V = void_value });
+    _ = try state.meanings.put("wff", MeaningType.C);
+    _ = try state.meanings.put("ph", MeaningType.V);
     var tokens = TokenList.init(std.testing.allocator);
     defer tokens.deinit();
     try tokens.push("wff");
