@@ -20,18 +20,9 @@ const InferenceRule = struct {
     hypotheses: HypothesisList,
     conclusion: Expression,
 
-    // TODO: move to VerifyState?
-    fn fromHypothesis(state: *VerifyState, tokens: TokenList) !InferenceRule {
-        const expression = try state.expressionOf(tokens);
-        return InferenceRule{
-            .hypotheses = &[_]Hypothesis{}, //TODO: Is this safe because it is comptime known?
-            .conclusion = expression,
-        };
-    }
-
-    fn deinit(self: *Self, state: *VerifyState) void {
+    fn deinit(self: *Self, allocator: *Allocator) void {
         // Later: deinit the hypotheses
-        state.allocator.free(self.conclusion);
+        allocator.free(self.conclusion);
     }
 };
 
@@ -47,10 +38,10 @@ const Meaning = union(MeaningType) {
     Variable: void,
     Rule: InferenceRule,
 
-    fn deinit(self: *Self, state: *VerifyState) void {
+    fn deinit(self: *Self, allocator: *Allocator) void {
         switch (self.*) {
             .Constant, .Variable => {},
-            .Rule => self.*.Rule.deinit(state),
+            .Rule => self.*.Rule.deinit(allocator),
         }
     }
 };
@@ -75,7 +66,7 @@ const VerifyState = struct {
     fn deinit(self: *Self) void {
         var it = self.meanings.iterator();
         while (it.next()) |kv| {
-            kv.value.deinit(self);
+            kv.value.deinit(self.allocator);
         }
         self.meanings.deinit();
         while (self.currentScopeDiff) |scopeDiff| {
@@ -83,6 +74,16 @@ const VerifyState = struct {
         }
     }
 
+    /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
+    fn fromHypothesis(self: *Self, tokens: TokenList) !InferenceRule {
+        const expression = try self.expressionOf(tokens);
+        return InferenceRule{
+            .hypotheses = &[_]Hypothesis{}, //TODO: Is this safe because it is comptime known?
+            .conclusion = expression,
+        };
+    }
+
+    /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
     fn expressionOf(self: *Self, tokens: TokenList) !Expression {
         var result = try self.allocator.alloc(CVToken, tokens.count());
         errdefer self.allocator.free(result);
@@ -173,14 +174,14 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 }
             },
             .F => |fStatement| {
-                const kv = try state.meanings.put(fStatement.label, Meaning{ .Rule = try InferenceRule.fromHypothesis(&state, fStatement.tokens) });
+                const kv = try state.meanings.put(fStatement.label, Meaning{ .Rule = try state.fromHypothesis(fStatement.tokens) });
                 if (kv) |_| return Error.Duplicate;
                 if (state.currentScopeDiff) |scopeDiff| {
                     _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
                 }
             },
             .E => |eStatement| {
-                const kv = try state.meanings.put(eStatement.label, Meaning{ .Rule = try InferenceRule.fromHypothesis(&state, eStatement.tokens) });
+                const kv = try state.meanings.put(eStatement.label, Meaning{ .Rule = try state.fromHypothesis(eStatement.tokens) });
                 if (kv) |_| return Error.Duplicate;
                 if (state.currentScopeDiff) |scopeDiff| {
                     _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
