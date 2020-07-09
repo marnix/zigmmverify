@@ -68,8 +68,8 @@ pub const StatementIterator = struct {
             label = token;
             token = (try self.nextToken()) orelse return Error.Incomplete;
         }
-        if (token[0] != '$') return Error.UnexpectedToken;
-        if (token.len != 2) return Error.IllegalToken;
+        if (token[0] != '$') return Error.UnexpectedToken; //TODO: Test
+        if (token.len != 2) return Error.IllegalToken; //TODO: Test
         var result: *Statement = undefined;
         switch (token[1]) { // handle the $x command
             'c' => {
@@ -85,11 +85,11 @@ pub const StatementIterator = struct {
             'f' => {
                 defer label = null;
                 var t = try self.nextUntil("$.");
-                if (t.count() < 2) return Error.Incomplete;
-                if (t.count() > 2) return Error.UnexpectedToken;
+                if (t.count() < 2) return Error.Incomplete; //TODO: Test
+                if (t.count() > 2) return Error.UnexpectedToken; //TODO: Test
                 result = try self.statement(.{
                     .F = .{
-                        .label = label orelse return Error.MissingLabel,
+                        .label = label orelse return Error.MissingLabel, //TODO: Test
                         .tokens = t,
                     },
                 });
@@ -98,7 +98,7 @@ pub const StatementIterator = struct {
                 defer label = null;
                 result = try self.statement(.{
                     .E = .{
-                        .label = label orelse return Error.MissingLabel,
+                        .label = label orelse return Error.MissingLabel, //TODO: Test
                         .tokens = try self.nextUntil("$."),
                     },
                 });
@@ -112,7 +112,7 @@ pub const StatementIterator = struct {
                 defer label = null;
                 result = try self.statement(.{
                     .A = .{
-                        .label = label orelse return Error.MissingLabel,
+                        .label = label orelse return Error.MissingLabel, //TODO: Test
                         .tokens = try self.nextUntil("$."),
                     },
                 });
@@ -121,7 +121,7 @@ pub const StatementIterator = struct {
                 defer label = null;
                 result = try self.statement(.{
                     .P = .{
-                        .label = label orelse return Error.MissingLabel,
+                        .label = label orelse return Error.MissingLabel, //TODO: Test
                         .tokens = try self.nextUntil("$="),
                         .proof = try self.nextUntil("$."),
                     },
@@ -129,11 +129,11 @@ pub const StatementIterator = struct {
             },
             '{' => return self.statement(.{ .BlockOpen = .{} }),
             '}' => return self.statement(.{ .BlockClose = .{} }),
-            else => return Error.IllegalToken,
+            else => return Error.IllegalToken, //TODO: Test
         }
         if (label) |_| {
             self.optStatement = result;
-            return Error.UnexpectedLabel;
+            return Error.UnexpectedLabel; //TODO: Test
         }
         return result;
     }
