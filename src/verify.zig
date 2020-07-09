@@ -15,6 +15,8 @@ const Expression = []CVToken;
 const Hypothesis = struct { expression: Expression, isF: bool };
 const HypothesisList = []Hypothesis;
 const InferenceRule = struct {
+    const Self = @This();
+
     hypotheses: HypothesisList,
     conclusion: Expression,
 
@@ -26,6 +28,11 @@ const InferenceRule = struct {
             .conclusion = expression,
         };
     }
+
+    fn deinit(self: *Self, state: *VerifyState) void {
+        // Later: deinit the hypotheses
+        state.allocator.free(self.conclusion);
+    }
 };
 
 const Substitution = TokenMap(Expression);
@@ -34,9 +41,18 @@ const ProofState = std.SinglyLinkedList(Expression);
 // TODO: Find a better name; {Token,Label,Symbol}Interpretation?
 const MeaningType = enum { Constant, Variable, Rule };
 const Meaning = union(MeaningType) {
+    const Self = @This();
+
     Constant: void,
     Variable: void,
     Rule: InferenceRule,
+
+    fn deinit(self: *Self, state: *VerifyState) void {
+        switch (self.*) {
+            .Constant, .Variable => {},
+            .Rule => self.*.Rule.deinit(state),
+        }
+    }
 };
 
 const VerifyState = struct {
@@ -57,6 +73,10 @@ const VerifyState = struct {
     }
 
     fn deinit(self: *Self) void {
+        var it = self.meanings.iterator();
+        while (it.next()) |kv| {
+            kv.value.deinit(self);
+        }
         self.meanings.deinit();
         while (self.currentScopeDiff) |scopeDiff| {
             scopeDiff.pop();
@@ -91,6 +111,7 @@ const ScopeDiff = struct {
 
     fn push(state: *VerifyState) !void {
         const newScopeDiff = try state.allocator.create(ScopeDiff);
+        errdefer state.allocator.destroy(newScopeDiff);
         newScopeDiff.* = Self{
             .state = state,
             .optOuter = state.currentScopeDiff,
@@ -183,6 +204,10 @@ const expect = std.testing.expect;
 const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
+
+test "simplest correct $f" {
+    try verify("$c wff $. $v ph $. wph $f wff ph $.", std.testing.allocator);
+}
 
 test "tokenlist to expression" {
     // TODO: Simplify this test case using a few helpers and/or refactorings.
