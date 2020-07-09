@@ -25,19 +25,46 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 # Next tasks
 
-- Loop over statements keeping a stack of blocks (for $d/$e/$f and $c/$v)
-  and a map (for $p/$a).
+- Check for duplicate $f a x $. $f b x $. declarations.
 
-- For each statement, run the proof.
+  In each `Meaning.Variable`, store the corresponding $f label,
+  and remove again (using `ScopeDiff.declaredVariables: TokenSet`).
+
+  (This might also help in the 'mandatory hypotheses iterator'.)
+
+- Build iterator for 'mandatory hypotheses for given expression':
+
+   * Keep a list of 'active hypotheses'
+     (`activeFEStatements` + `ScopeDiff.nrActiveFEStatements`).
+
+   * Starting with the variables in the expression,
+     go backwards over the active hypotheses list, and
+
+      - select every $e hypothesis;
+      - add the variables from that $e hypothesis;
+      - select every $f hypothesis for a known variable.
+
+   * Then return the found hypotheses in 'forward' order.
+
+- For each $a and $p statement, build the corresponding `InferenceRule`.
+
+  This uses the above iterator.
+
+- For each $p statement, run the proof.
   For compressed proofs, don't decompress-then-run:
   Decompression needs some context
   (viz. the mandatory hypotheses for the $p statement,
   and the number of hypotheses for each referenced statement),
   and that context is more readily available while running the proof.
 
-- Execute proof against state (stack+map).
+  So execute the proof against the current state,
+  keeping a stack of `Expression`s.
+
+  (Initially ignore $d restrictions.)
 
 - Verify all proofs by executing and comparing for all statements.
+
+- Support $d.
 
 - Support $[ ... $] includes.  (Presumably in the tokenizer.)
 
