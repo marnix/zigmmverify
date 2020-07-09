@@ -85,16 +85,19 @@ const VerifyState = struct {
 
     fn expressionOf(self: *Self, tokens: TokenList) !Expression {
         var result = try self.allocator.alloc(CVToken, tokens.count());
+        errdefer self.allocator.free(result);
         var i: usize = 0;
         var it = @as(TokenList, tokens).iterator(0);
         while (it.next()) |pToken| : (i += 1) {
-            const kv = self.meanings.get(pToken.*) orelse return Error.UnexpectedToken; // TODO: test
-            const isConstantToken = switch (kv.value) {
-                .Constant => true,
-                .Variable => false,
-                else => return Error.UnexpectedToken, // TODO: test
+            const kv = self.meanings.get(pToken.*) orelse return Error.UnexpectedToken;
+            result[i] = .{
+                .token = pToken.*,
+                .cv = switch (kv.value) {
+                    .Constant => .C,
+                    .Variable => .V,
+                    else => return Error.UnexpectedToken,
+                },
             };
-            result[i] = .{ .token = pToken.*, .cv = if (isConstantToken) .C else .V };
         }
         return result;
     }
@@ -204,6 +207,14 @@ const expect = std.testing.expect;
 const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
+
+test "use undeclared variable" {
+    expectError(Error.UnexpectedToken, verify("$c wff $. wph $f wff ph $.", std.testing.allocator));
+}
+
+test "use statement label as a token" {
+    expectError(Error.UnexpectedToken, verify("$c wff ph $. wph $f wff ph $. wxx $e wph $.", std.testing.allocator));
+}
 
 test "simplest correct $f" {
     try verify("$c wff $. $v ph $. wph $f wff ph $.", std.testing.allocator);
