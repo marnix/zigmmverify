@@ -15,11 +15,11 @@ pub const StatementType = enum { C, V, F, E, D, A, P, BlockOpen, BlockClose };
 pub const Statement = union(StatementType) {
     C: struct { constants: TokenList },
     V: struct { variables: TokenList },
-    F: struct { label: Token, expression: TokenList }, // runtime checked: exactly 2 tokens
-    E: struct { label: Token, expression: TokenList },
+    F: struct { label: Token, tokens: TokenList }, // runtime checked: exactly 2 tokens
+    E: struct { label: Token, tokens: TokenList },
     D: struct { variables: TokenList },
-    A: struct { label: Token, expression: TokenList },
-    P: struct { label: Token, expression: TokenList, proof: TokenList },
+    A: struct { label: Token, tokens: TokenList },
+    P: struct { label: Token, tokens: TokenList, proof: TokenList },
     BlockOpen,
     BlockClose: struct {},
 
@@ -27,12 +27,12 @@ pub const Statement = union(StatementType) {
         switch (self.*) {
             .C => self.*.C.constants.deinit(),
             .V => self.*.V.variables.deinit(),
-            .F => self.*.F.expression.deinit(),
-            .E => self.*.E.expression.deinit(),
+            .F => self.*.F.tokens.deinit(),
+            .E => self.*.E.tokens.deinit(),
             .D => self.*.D.variables.deinit(),
-            .A => self.*.A.expression.deinit(),
+            .A => self.*.A.tokens.deinit(),
             .P => {
-                self.*.P.expression.deinit();
+                self.*.P.tokens.deinit();
                 self.*.P.proof.deinit();
             },
             .BlockOpen, .BlockClose => {},
@@ -90,7 +90,7 @@ pub const StatementIterator = struct {
                 result = try self.statement(.{
                     .F = .{
                         .label = label orelse return Error.MissingLabel,
-                        .expression = t,
+                        .tokens = t,
                     },
                 });
             },
@@ -99,7 +99,7 @@ pub const StatementIterator = struct {
                 result = try self.statement(.{
                     .E = .{
                         .label = label orelse return Error.MissingLabel,
-                        .expression = try self.nextUntil("$."),
+                        .tokens = try self.nextUntil("$."),
                     },
                 });
             },
@@ -113,7 +113,7 @@ pub const StatementIterator = struct {
                 result = try self.statement(.{
                     .A = .{
                         .label = label orelse return Error.MissingLabel,
-                        .expression = try self.nextUntil("$."),
+                        .tokens = try self.nextUntil("$."),
                     },
                 });
             },
@@ -122,7 +122,7 @@ pub const StatementIterator = struct {
                 result = try self.statement(.{
                     .P = .{
                         .label = label orelse return Error.MissingLabel,
-                        .expression = try self.nextUntil("$="),
+                        .tokens = try self.nextUntil("$="),
                         .proof = try self.nextUntil("$."),
                     },
                 });
@@ -180,7 +180,7 @@ test "parse $p declaration" {
     var statements = StatementIterator.init(std.testing.allocator, "idwffph $p wff ph $= ? $.");
     _ = try forNext(&statements, struct {
         fn do(s: var) void {
-            expect(eqs(s.?.P.expression, &[_]Token{ "wff", "ph" }));
+            expect(eqs(s.?.P.tokens, &[_]Token{ "wff", "ph" }));
             expect(eqs(s.?.P.proof, &[_]Token{"?"}));
         }
     });
@@ -193,7 +193,7 @@ test "parse $f declaration" {
     _ = try forNext(&statements, struct {
         fn do(s: var) void {
             expect(eq(s.?.F.label, "wph"));
-            expect(eqs(s.?.F.expression, &[_]Token{ "wff", "ph" }));
+            expect(eqs(s.?.F.tokens, &[_]Token{ "wff", "ph" }));
         }
     });
     expect((try statements.next()) == null);

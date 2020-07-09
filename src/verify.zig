@@ -18,6 +18,7 @@ const InferenceRule = struct {
     hypotheses: HypothesisList,
     conclusion: Expression,
 
+    // TODO: move to VerifyState?
     fn fromHypothesis(state: *VerifyState, tokens: TokenList) !InferenceRule {
         const expression = try state.expressionOf(tokens);
         return InferenceRule{
@@ -148,14 +149,14 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 }
             },
             .F => |fStatement| {
-                const kv = try state.meanings.put(fStatement.label, Meaning{ .Rule = try InferenceRule.fromHypothesis(&state, fStatement.expression) });
+                const kv = try state.meanings.put(fStatement.label, Meaning{ .Rule = try InferenceRule.fromHypothesis(&state, fStatement.tokens) });
                 if (kv) |_| return Error.Duplicate;
                 if (state.currentScopeDiff) |scopeDiff| {
                     _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
                 }
             },
             .E => |eStatement| {
-                const kv = try state.meanings.put(eStatement.label, Meaning{ .Rule = try InferenceRule.fromHypothesis(&state, eStatement.expression) });
+                const kv = try state.meanings.put(eStatement.label, Meaning{ .Rule = try InferenceRule.fromHypothesis(&state, eStatement.tokens) });
                 if (kv) |_| return Error.Duplicate;
                 if (state.currentScopeDiff) |scopeDiff| {
                     _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
