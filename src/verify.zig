@@ -21,6 +21,14 @@ const InferenceRule = struct {
     fn fromHypothesis(state: *VerifyState, tokens: TokenList) !InferenceRule {
         const expression = try state.expressionOf(tokens);
         return InferenceRule{
+            .hypotheses = &[_]Hypothesis{}, //TODO: Is this safe because it is comptime known?
+            .conclusion = expression,
+        };
+    }
+
+    fn fromFHypothesis(state: *VerifyState, kind: Token, variable: Token) !InferenceRule {
+        const expression = try state.expressionOf2(kind, variable);
+        return InferenceRule{
             .hypotheses = &[_]Hypothesis{},
             .conclusion = expression,
         };
@@ -75,6 +83,16 @@ const VerifyState = struct {
             };
             result[i] = .{ .token = pToken.*, .cv = if (isConstantToken) .C else .V };
         }
+        return result;
+    }
+    fn expressionOf2(self: *Self, kind: Token, variable: Token) !Expression {
+        var result = try self.allocator.alloc(CVToken, 2);
+        const kvKind = self.meanings.get(kind) orelse return Error.UnexpectedToken; // TODO: test
+        if (kvKind.value != .Constant) return Error.UnexpectedToken; // TODO: test
+        const kvVariable = self.meanings.get(variable) orelse return Error.UnexpectedToken; // TODO: test
+        if (kvVariable.value != .Variable) return Error.UnexpectedToken; // TODO: test
+        result[0] = .{ .token = kind, .cv = .C };
+        result[1] = .{ .token = variable, .cv = .V };
         return result;
     }
 };
@@ -148,6 +166,8 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                 }
             },
             .F => |fStatement| {
+                const kv = try state.meanings.put(fStatement.label, Meaning{ .Rule = try InferenceRule.fromFHypothesis(&state, fStatement.kind, fStatement.variable) });
+                if (kv) |_| return Error.Duplicate;
                 if (state.currentScopeDiff) |scopeDiff| {
                     _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
                 }
