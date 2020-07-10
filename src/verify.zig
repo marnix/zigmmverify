@@ -259,9 +259,9 @@ test "tokenlist to expression" {
 //    expectError(Error.Duplicate, verify("$c ca cb $. ${ $v v $. cav $f ca v $. cbv $f cb v $. $}", std.testing.allocator));
 //}
 
-//test "duplicate variable declarations, in nested scope (2)" {
-//    try verify("$c ca cb $. $v v $. ${ cav $f ca v $. $} cbv $f cb v $.", std.testing.allocator);
-//}
+test "duplicate variable declarations, in nested scope (2)" {
+    try verify("$c ca cb $. $v v $. ${ cav $f ca v $. $} cbv $f cb v $.", std.testing.allocator);
+}
 
 test "$v in nested scope" {
     try verify("$c ca $. ${ $v v $. $}", std.testing.allocator);
