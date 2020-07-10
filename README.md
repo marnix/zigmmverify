@@ -27,9 +27,6 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 - Build iterator for 'mandatory hypotheses for given expression':
 
-   * Keep a list of 'active hypotheses'
-     (`activeFEStatements` + `ScopeDiff.nrActiveFEStatements`).
-
    * Starting with the variables in the expression,
      go backwards over the active hypotheses list, and
 

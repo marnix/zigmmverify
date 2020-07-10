@@ -53,12 +53,14 @@ const VerifyState = struct {
 
     /// what each active token means
     meanings: TokenMap(Meaning),
+    activeHypotheses: TokenList,
     currentScopeDiff: ?*ScopeDiff,
 
     fn init(allocator: *Allocator) !Self {
         return Self{
             .allocator = allocator,
             .meanings = TokenMap(Meaning).init(allocator),
+            .activeHypotheses = TokenList.init(allocator),
             .currentScopeDiff = null,
         };
     }
@@ -72,6 +74,7 @@ const VerifyState = struct {
         while (self.currentScopeDiff) |scopeDiff| {
             scopeDiff.pop();
         }
+        self.activeHypotheses.deinit();
     }
 
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
@@ -113,6 +116,7 @@ const ScopeDiff = struct {
     optOuter: ?*ScopeDiff,
     activeTokens: TokenSet,
     variablesInFStatements: TokenSet,
+    nrActiveHypotheses: usize,
 
     fn push(state: *VerifyState) !void {
         const newScopeDiff = try state.allocator.create(ScopeDiff);
@@ -122,6 +126,7 @@ const ScopeDiff = struct {
             .optOuter = state.currentScopeDiff,
             .activeTokens = TokenSet.init(state.allocator),
             .variablesInFStatements = TokenSet.init(state.allocator),
+            .nrActiveHypotheses = 0,
         };
 
         state.currentScopeDiff = newScopeDiff;
@@ -129,9 +134,16 @@ const ScopeDiff = struct {
 
     fn pop(self: *Self) void {
         self.state.currentScopeDiff = self.optOuter;
+        self.deinitNrActiveHypotheses();
         self.deinitVariableInFStatements();
         self.deinitActiveTokens();
         self.state.allocator.destroy(self);
+    }
+
+    fn deinitNrActiveHypotheses(self: *Self) void {
+        while (self.nrActiveHypotheses > 0) : (self.nrActiveHypotheses -= 1) {
+            _ = self.state.activeHypotheses.pop();
+        }
     }
 
     fn deinitVariableInFStatements(self: *Self) void {
@@ -201,7 +213,9 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
                     if (kv2.value.Variable.usedInFStatement) return Error.Duplicate;
                     kv2.value.Variable.usedInFStatement = true;
                 } else return Error.UnexpectedToken; // $f k x $. without $v x $.  TODO: Test
+                _ = try state.activeHypotheses.push(fStatement.label);
                 if (state.currentScopeDiff) |scopeDiff| {
+                    scopeDiff.nrActiveHypotheses += 1;
                     _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
                     assert(!scopeDiff.variablesInFStatements.contains(variable));
                     _ = try scopeDiff.variablesInFStatements.add(variable);
@@ -210,7 +224,9 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
             .E => |eStatement| {
                 if (state.meanings.get(eStatement.label)) |_| return Error.Duplicate;
                 _ = try state.meanings.put(eStatement.label, Meaning{ .Rule = try state.fromHypothesis(eStatement.tokens) });
+                _ = try state.activeHypotheses.push(eStatement.label);
                 if (state.currentScopeDiff) |scopeDiff| {
+                    scopeDiff.nrActiveHypotheses += 1;
                     _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
                 }
             },
