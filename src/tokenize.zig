@@ -27,6 +27,10 @@ pub const TokenSet = struct {
         _ = self.map.remove(token);
     }
 
+    pub fn contains(self: *Self, token: Token) bool {
+        return self.map.contains(token);
+    }
+
     /// The iterator's next() returns a ?TokenMap(void).KV,
     /// of which only the .key field must be used.
     pub fn iterator(self: *Self) TokenMap(void).Iterator {
