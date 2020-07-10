@@ -25,6 +25,9 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 # Next tasks
 
+- Clean-up / refactor VerifyState + ScopeDiff:
+  Add methods, move functionality between these structs.
+
 - Build iterator for 'mandatory hypotheses for given expression':
 
    * Starting with the variables in the expression,
