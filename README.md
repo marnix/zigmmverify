@@ -25,13 +25,6 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 # Next tasks
 
-- Check for duplicate $f a x $. $f b x $. declarations.
-
-  In each `Meaning.Variable`, store the corresponding $f label,
-  and remove again (using `ScopeDiff.declaredVariables: TokenSet`).
-
-  (This might also help in the 'mandatory hypotheses iterator'.)
-
 - Build iterator for 'mandatory hypotheses for given expression':
 
    * Keep a list of 'active hypotheses'
