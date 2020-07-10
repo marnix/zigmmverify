@@ -35,7 +35,7 @@ const Meaning = union(MeaningType) {
     const Self = @This();
 
     Constant: void,
-    Variable: ?Token,
+    Variable: struct { usedInFStatement: bool },
     Rule: InferenceRule,
 
     fn deinit(self: *Self, allocator: *Allocator) void {
@@ -170,7 +170,7 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
             .V => |vStatement| {
                 var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
                 while (it.next()) |variable| {
-                    const kv = try state.meanings.put(variable.*, Meaning{ .Variable = null });
+                    const kv = try state.meanings.put(variable.*, Meaning{ .Variable = .{ .usedInFStatement = false } });
                     if (kv) |_| return Error.Duplicate;
                     if (state.currentScopeDiff) |scopeDiff| {
                         _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
@@ -179,14 +179,20 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
             },
             .F => |fStatement| {
                 const kv = try state.meanings.put(fStatement.label, Meaning{ .Rule = try state.fromHypothesis(fStatement.tokens) });
-                if (kv) |_| return Error.Duplicate; // check _before_ put
+                if (kv) |_| return Error.Duplicate; // check _before_ put, to prevent memory leak on error, TODO: test
+                if (state.meanings.get(fStatement.tokens.at(1).*)) |kv2| {
+                    if (kv2.value != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable, TODO: test
+                    if (kv2.value.Variable.usedInFStatement) return Error.Duplicate;
+                    kv2.value.Variable.usedInFStatement = true;
+                } else
+                    return Error.UnexpectedToken; // $f k x $. without $v x $.  TODO: Test
                 if (state.currentScopeDiff) |scopeDiff| {
                     _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
                 }
             },
             .E => |eStatement| {
                 const kv = try state.meanings.put(eStatement.label, Meaning{ .Rule = try state.fromHypothesis(eStatement.tokens) });
-                if (kv) |_| return Error.Duplicate; // check _before_ put
+                if (kv) |_| return Error.Duplicate; // check _before_ put, to prevent memory leak on error, TODO: test
                 if (state.currentScopeDiff) |scopeDiff| {
                     _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
                 }
@@ -234,7 +240,7 @@ test "tokenlist to expression" {
     var state = try VerifyState.init(std.testing.allocator);
     defer state.deinit();
     _ = try state.meanings.put("wff", MeaningType.Constant);
-    _ = try state.meanings.put("ph", Meaning{ .Variable = null });
+    _ = try state.meanings.put("ph", Meaning{ .Variable = .{ .usedInFStatement = false } });
     var tokens = TokenList.init(std.testing.allocator);
     defer tokens.deinit();
     try tokens.push("wff");
@@ -251,17 +257,17 @@ test "tokenlist to expression" {
     expect(expression[1].cv == .V);
 }
 
-//test "no duplicate variable declarations" {
-//    expectError(Error.Duplicate, verify("$c ca cb $. $v v $. cav $f ca v $. cbv $f cb v $.", std.testing.allocator));
-//}
-
-//test "no duplicate variable declarations, in nested scope (2)" {
-//    expectError(Error.Duplicate, verify("$c ca cb $. ${ $v v $. cav $f ca v $. cbv $f cb v $. $}", std.testing.allocator));
-//}
-
-test "duplicate variable declarations, in nested scope (2)" {
-    try verify("$c ca cb $. $v v $. ${ cav $f ca v $. $} cbv $f cb v $.", std.testing.allocator);
+test "no duplicate variable declarations" {
+    expectError(Error.Duplicate, verify("$c ca cb $. $v v $. cav $f ca v $. cbv $f cb v $.", std.testing.allocator));
 }
+
+test "no duplicate variable declarations, in nested scope (2)" {
+    expectError(Error.Duplicate, verify("$c ca cb $. ${ $v v $. cav $f ca v $. cbv $f cb v $. $}", std.testing.allocator));
+}
+
+//test "duplicate variable declarations, in nested scope (2)" {
+//    try verify("$c ca cb $. $v v $. ${ cav $f ca v $. $} cbv $f cb v $.", std.testing.allocator);
+//}
 
 test "$v in nested scope" {
     try verify("$c ca $. ${ $v v $. $}", std.testing.allocator);
