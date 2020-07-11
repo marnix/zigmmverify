@@ -11,7 +11,8 @@ const TokenMap = tokenize.TokenMap;
 const parse = @import("parse.zig");
 
 const SinglyLinkedList = std.SinglyLinkedList;
-const FELabelList = std.SegmentedList(struct { label: Token, fe: enum { F, E } }, 0);
+const FELabel = struct { label: Token, fe: enum { F, E } };
+const FELabelList = std.SegmentedList(FELabel, 0);
 
 const CVToken = struct { token: Token, cv: enum { C, V } };
 const Expression = []CVToken;
@@ -158,14 +159,15 @@ const VerifyState = struct {
         }
     }
 
+    /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
     fn inferenceRuleOf(self: *Self, tokens: TokenList) !InferenceRule {
         const conclusion = try self.expressionOf(tokens);
         var it = try self.mandatoryHypothesesOf(conclusion);
         defer it.deinit();
         var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
         var i: usize = 0;
-        while (it.next()) |mandatoryHypothesisLabel| : (i += 1) {
-            hypotheses[i] = .{ .expression = self.meanings.get(mandatoryHypothesisLabel).?.value.Rule.conclusion, .isF = false }; //TODO: get isF!!!
+        while (it.next()) |feLabel| : (i += 1) {
+            hypotheses[i] = .{ .expression = self.meanings.get(feLabel.label).?.value.Rule.conclusion, .isF = (feLabel.fe == .F) };
         }
         return InferenceRule{
             .hypotheses = hypotheses,
@@ -266,7 +268,7 @@ const ScopeDiff = struct {
                 kv2.value.deinit(self.state.allocator);
             } else {
                 std.debug.warn("\nTODO: insert meaning for token {0}.\n", .{kv.key});
-                // this is reachable in error paths, unfortunately.
+                // this is reachable in error paths, unfortunately. TODO: Try to fix
             }
         }
         self.activeTokens.deinit();
@@ -396,7 +398,7 @@ const MHIterator = struct {
 
     state: *VerifyState,
     allocator: *Allocator,
-    mhs: SinglyLinkedList(Token),
+    mhs: SinglyLinkedList(FELabel),
     len: usize,
 
     /// expression remains owned by the caller
@@ -408,7 +410,7 @@ const MHIterator = struct {
             _ = try mandatoryVariables.add(cvToken.token);
         };
 
-        var mhs = SinglyLinkedList(Token).init();
+        var mhs = SinglyLinkedList(FELabel).init();
         var len: usize = 0;
         // loop over state.activeHypotheses, in reverse order
         var it = state.activeHypotheses.iterator(state.activeHypotheses.count());
@@ -421,14 +423,14 @@ const MHIterator = struct {
                     const fVariable = fRule.conclusion[1].token;
                     if (mandatoryVariables.contains(fVariable)) {
                         // include every $f for every mandatory variable
-                        var node = try mhs.createNode(activeHypothesis.label, allocator);
+                        var node = try mhs.createNode(.{ .label = activeHypothesis.label, .fe = .F }, allocator);
                         mhs.prepend(node);
                         len += 1;
                     }
                 },
                 .E => {
                     // include every $e
-                    var node = try mhs.createNode(activeHypothesis.label, allocator);
+                    var node = try mhs.createNode(.{ .label = activeHypothesis.label, .fe = .E }, allocator);
                     mhs.prepend(node);
                     len += 1;
                     // the variables of the $e hypothesis are also mandatory
@@ -453,7 +455,7 @@ const MHIterator = struct {
         return self.len;
     }
 
-    fn next(self: *Self) ?Token { // TODO: Change return type to InferenceRule?
+    fn next(self: *Self) ?FELabel {
         if (self.mhs.popFirst()) |node| {
             defer self.mhs.destroyNode(node, self.allocator);
             self.len -= 1;
@@ -497,8 +499,13 @@ test "iterate over single $f hypothesis" {
 
     var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
     defer it.deinit();
+    var item: ?FELabel = null;
     assert(it.count() == 1);
-    expect(eq(it.next().?, "wph"));
+
+    item = it.next();
+    expect(eq(item.?.label, "wph"));
+    expect(item.?.fe == .F);
+
     expect(it.next() == null);
 }
 
@@ -509,10 +516,32 @@ test "iterate with $e hypothesis" {
 
     var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
     defer it.deinit();
+    var item: ?FELabel = null;
     assert(it.count() == 3);
-    expect(eq(it.next().?, "wta"));
-    expect(eq(it.next().?, "wph"));
+
+    item = it.next();
+    expect(eq(item.?.label, "wta"));
+    expect(item.?.fe == .F);
+
+    item = it.next();
+    expect(eq(item.?.label, "wph"));
+    expect(item.?.fe == .F);
     assert(it.count() == 1);
-    expect(eq(it.next().?, "hyp"));
+
+    item = it.next();
+    expect(eq(item.?.label, "hyp"));
+    expect(item.?.fe == .E);
+
     expect(it.next() == null);
+}
+
+test "inference rule with $f and $e mandatory hypotheses" {
+    var state = try VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+    try state.addStatementsFrom("$c wff |- $. $v ph ps ta $. wta $f wff ta $. wph $f wff ph $. hyp $e wff ta $.");
+
+    try state.addStatementsFrom("alltrue $a |- ph $.");
+
+    const alltrueRule = state.meanings.get("alltrue").?.value.Rule;
+    expect(alltrueRule.hypotheses.len == 3);
 }

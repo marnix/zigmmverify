@@ -27,10 +27,8 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 - Clean-up / refactor VerifyState + ScopeDiff:
   Add methods, move functionality between these structs.
-
-- For each $a and $p statement, build the corresponding `InferenceRule`.
-
-  This uses the 'mandatory hypothesis' iterator.
+  Also encapsulate some parts.
+  Also try to avoid duplication in statement handling.
 
 - For each $p statement, run the proof.
   For compressed proofs, don't decompress-then-run:
