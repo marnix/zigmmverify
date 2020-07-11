@@ -1,12 +1,45 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-const assert = std.debug.assert;
+usingnamespace @import("globals.zig");
 
 const errors = @import("errors.zig");
 const Error = errors.Error;
 
 pub const Token = []const u8;
 pub const TokenList = std.SegmentedList(Token, 0);
+pub const TokenSet = struct {
+    const Self = @This();
+    map: TokenMap(void),
+
+    pub fn init(allocator: *Allocator) Self {
+        return Self{ .map = TokenMap(void).init(allocator) };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.map.deinit();
+    }
+
+    pub fn add(self: *Self, token: Token) !bool {
+        const kv = try self.map.put(token, void_value);
+        if (kv) |_| return true; // already present
+        return false;
+    }
+
+    pub fn remove(self: *Self, token: Token) void {
+        _ = self.map.remove(token);
+    }
+
+    pub fn contains(self: *Self, token: Token) bool {
+        return self.map.contains(token);
+    }
+
+    /// The iterator's next() returns a ?TokenMap(void).KV,
+    /// of which only the .key field must be used.
+    pub fn iterator(self: *Self) TokenMap(void).Iterator {
+        return self.map.iterator();
+    }
+};
+pub fn TokenMap(comptime T: type) type {
+    return std.StringHashMap(T); // key is Token == []const u8
+}
 
 pub const TokenIterator = struct {
     buffer: Token,

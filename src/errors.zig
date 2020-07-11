@@ -1,3 +1,13 @@
-const std = @import("std");
+usingnamespace @import("globals.zig");
 
-pub const Error = error{ IllegalCharacter, Incomplete, UnexpectedToken, IllegalToken, MissingLabel, UnexpectedLabel };
+pub const Error = error{
+// syntax errors
+    IllegalCharacter,
+    Incomplete,
+    UnexpectedToken,
+    IllegalToken,
+    MissingLabel,
+    UnexpectedLabel,
+    // semantical errors
+    Duplicate,
+};

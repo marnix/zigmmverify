@@ -1,6 +1,4 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-const assert = std.debug.assert;
+usingnamespace @import("globals.zig");
 
 const errors = @import("errors.zig");
 const Error = errors.Error;

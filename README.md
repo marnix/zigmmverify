@@ -25,21 +25,30 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 # Next tasks
 
-- Loop over statements keeping a stack of blocks (for $d/$e/$f and $c/$v)
-  and a map (for $p/$a).
+- Clean-up / refactor VerifyState + ScopeDiff:
+  Add methods, move functionality between these structs.
+  Also encapsulate some parts.
+  Also try to avoid duplication in statement handling.
 
-- For each statement, run the proof.
+- For each $p statement, run the proof.
   For compressed proofs, don't decompress-then-run:
   Decompression needs some context
   (viz. the mandatory hypotheses for the $p statement,
   and the number of hypotheses for each referenced statement),
   and that context is more readily available while running the proof.
 
-- Execute proof against state (stack+map).
+  So execute the proof against the current state,
+  keeping a stack of `Expression`s.
+
+  (Initially ignore $d restrictions.)
 
 - Verify all proofs by executing and comparing for all statements.
 
-- Support $[ ... $] includes.
+- Support $d.
+
+- Support $[ ... $] includes.  (Presumably in the tokenizer.)
+
+- Identify the location (line/column) of at least the first error.
 
 - Don't use 'error union' for Metamath verification errors.
 
