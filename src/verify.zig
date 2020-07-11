@@ -373,7 +373,6 @@ const MHIterator = struct {
     state: *VerifyState,
     allocator: *Allocator,
     mhs: SinglyLinkedList(Token),
-    iterator: ?*SinglyLinkedList(Token).Node,
 
     /// expression remains owned by the caller
     fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) !MHIterator {
@@ -386,16 +385,29 @@ const MHIterator = struct {
         var mhs = SinglyLinkedList(Token).init();
         // loop over state.activeHypotheses, in reverse order
         var it = state.activeHypotheses.iterator(state.activeHypotheses.count());
-        while (it.prev()) |feLabel| {
-            // TODO: if mandatory hypothesis, add to the front of mhs
+        while (it.prev()) |activeHypothesis| {
+            switch (activeHypothesis.fe) {
+                .F => {
+                    //TODO only if $f's variable in variables
+                    var node = try mhs.createNode(activeHypothesis.label, allocator);
+                    mhs.prepend(node);
+                },
+                .E => {
+                    var node = try mhs.createNode(activeHypothesis.label, allocator);
+                    mhs.prepend(node);
+                    // TODO: add all variables of $e to variables
+                },
+            }
         }
 
-        return MHIterator{ .state = state, .allocator = allocator, .mhs = mhs, .iterator = mhs.first };
+        return MHIterator{ .state = state, .allocator = allocator, .mhs = mhs };
     }
 
+    // TODO: add deinit() for error scenarios, which loops over mhs and frees all nodes
+
     fn next(self: *Self) ?Token { // TODO: Change return type to InferenceRule?
-        if (self.iterator) |node| {
-            self.iterator = node.next;
+        if (self.mhs.popFirst()) |node| {
+            defer self.mhs.destroyNode(node, self.allocator);
             return node.data;
         } else return null;
     }
@@ -433,5 +445,5 @@ test "iterate over single $f hypothesis" {
     try state.addStatementsFrom("$c wff |- $. $v ph $. wph $f wff ph $.");
 
     var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
-    // TODO implement: expect(eq(it.next().?, "wph"));
+    expect(eq(it.next().?, "wph"));
 }
