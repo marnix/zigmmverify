@@ -149,9 +149,9 @@ const VerifyState = struct {
     }
 
     /// consumes the passed expression
-    fn mandatoryHypothesesOf(self: *Self, expression: Expression) MHIterator {
+    fn mandatoryHypothesesOf(self: *Self, expression: Expression) !MHIterator {
         defer self.allocator.free(expression);
-        return MHIterator.init(self, self.allocator, expression);
+        return try MHIterator.init(self, self.allocator, expression);
     }
 
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
@@ -375,9 +375,20 @@ const MHIterator = struct {
     iterator: ?*SinglyLinkedList(Token).Node,
 
     /// expression remains owned by the caller
-    fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) MHIterator {
+    fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) !MHIterator {
+        var variables = TokenSet.init(allocator);
+        defer variables.deinit();
+        for (expression) |cvToken| if (cvToken.cv == .V) {
+            _ = try variables.add(cvToken.token);
+        };
+
         var mhs = SinglyLinkedList(Token).init();
-        // TODO: add all mandatory hypotheses to the front of mhs
+        // loop over state.activeHypotheses, in reverse order
+        var it = state.activeHypotheses.iterator(state.activeHypotheses.count());
+        while (it.prev()) |feLabel| {
+            // TODO: if mandatory hypothesis, add to the front of mhs
+        }
+
         return MHIterator{ .state = state, .allocator = allocator, .mhs = mhs, .iterator = mhs.first };
     }
 
@@ -411,7 +422,7 @@ test "iterate over no mandatory hypotheses" {
     defer state.deinit();
     try state.addStatementsFrom("$c T $.");
 
-    var it = state.mandatoryHypothesesOf(try expressionOf(&state, "T"));
+    var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "T"));
     expect(it.next() == null);
 }
 
@@ -420,6 +431,6 @@ test "iterate over single $f hypothesis" {
     defer state.deinit();
     try state.addStatementsFrom("$c wff |- $. $v ph $. wph $f wff ph $.");
 
-    var it = state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
+    var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
     // TODO implement: expect(eq(it.next().?, "wph"));
 }
