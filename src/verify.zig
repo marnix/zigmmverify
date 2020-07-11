@@ -134,6 +134,20 @@ const VerifyState = struct {
                         _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
                     }
                 },
+                .A => |aStatement| {
+                    var it = try self.mandatoryHypothesesOf(try self.expressionOf(aStatement.tokens));
+                    while (it.next()) |_| {
+                        //...do something...
+                    }
+                    it.deinit();
+                },
+                .P => |pStatement| {
+                    var it = try self.mandatoryHypothesesOf(try self.expressionOf(pStatement.tokens));
+                    while (it.next()) |_| {
+                        //...do something...
+                    }
+                    it.deinit();
+                },
                 .BlockOpen => {
                     try ScopeDiff.push(self);
                 },
