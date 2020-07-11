@@ -146,6 +146,12 @@ const VerifyState = struct {
         }
     }
 
+    /// consumes the passed expression
+    fn mandatoryHypothesesOf(self: *Self, expression: Expression) MHIterator {
+        defer self.allocator.free(expression);
+        return MHIterator.init(self, self.allocator, expression);
+    }
+
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
     fn fromHypothesis(self: *Self, tokens: TokenList) !InferenceRule {
         const expression = try self.expressionOf(tokens);
@@ -353,4 +359,58 @@ test "single variable" {
 
 test "duplicate constant" {
     expectError(Error.Duplicate, verify("$c wff wff $.", std.testing.allocator));
+}
+
+// ----------------------------------------
+// ITERATOR OVER MANDATORY HYPOTHESES
+
+const MHIterator = struct {
+    const Self = @This();
+
+    state: *VerifyState,
+    allocator: *Allocator,
+
+    /// expression remains owned by the caller
+    fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) MHIterator {
+        return MHIterator{ .state = state, .allocator = allocator };
+    }
+
+    fn next(self: *Self) ?Token { // TODO: Change return type to InferenceRule?
+        return null;
+    }
+};
+
+fn tokenListOf(buffer: []const u8) !TokenList {
+    var it = parse.StatementIterator.init(std.testing.allocator, buffer);
+    var result = TokenList.init(std.testing.allocator);
+    while (true) {
+        if (try it.nextToken()) |token| {
+            _ = try result.push(token);
+        } else break;
+    }
+    return result;
+}
+
+fn expressionOf(state: *VerifyState, buffer: []const u8) !Expression {
+    var t = try tokenListOf(buffer);
+    defer t.deinit();
+    return try state.expressionOf(t);
+}
+
+test "iterate over no mandatory hypotheses" {
+    var state = try VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+    try state.addStatementsFrom("$c T $.");
+
+    var it = state.mandatoryHypothesesOf(try expressionOf(&state, "T"));
+    expect(it.next() == null);
+}
+
+test "iterate over single $f hypothesis" {
+    var state = try VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+    try state.addStatementsFrom("$c wff |- $. $v ph $. wph $f wff ph $.");
+
+    var it = state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
+    // TODO implement: expect(eq(it.next().?, "wph"));
 }
