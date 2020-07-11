@@ -28,12 +28,6 @@ Build using zig 0.6.0, then just run the resulting binary.
 - Clean-up / refactor VerifyState + ScopeDiff:
   Add methods, move functionality between these structs.
 
-- Finish the iterator for 'mandatory hypotheses for given expression':
-
-   * When going backwards over the active hypotheses list:
-
-      - add the variables from that $e hypothesis.
-
 - For each $a and $p statement, build the corresponding `InferenceRule`.
 
   This uses the above iterator.

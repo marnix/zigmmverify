@@ -376,10 +376,11 @@ const MHIterator = struct {
 
     /// expression remains owned by the caller
     fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) !MHIterator {
-        var variables = TokenSet.init(allocator);
-        defer variables.deinit();
+        // initially mandatory variables: those from the given expression
+        var mandatoryVariables = TokenSet.init(allocator);
+        defer mandatoryVariables.deinit();
         for (expression) |cvToken| if (cvToken.cv == .V) {
-            _ = try variables.add(cvToken.token);
+            _ = try mandatoryVariables.add(cvToken.token);
         };
 
         var mhs = SinglyLinkedList(Token).init();
@@ -392,15 +393,22 @@ const MHIterator = struct {
                     assert(fRule.conclusion.len == 2);
                     assert(fRule.conclusion[1].cv == .V);
                     const fVariable = fRule.conclusion[1].token;
-                    if (variables.contains(fVariable)) {
+                    if (mandatoryVariables.contains(fVariable)) {
+                        // include every $f for every mandatory variable
                         var node = try mhs.createNode(activeHypothesis.label, allocator);
                         mhs.prepend(node);
                     }
                 },
                 .E => {
+                    // include every $e
                     var node = try mhs.createNode(activeHypothesis.label, allocator);
                     mhs.prepend(node);
-                    // TODO: add all variables of $e to variables
+                    // the variables of the $e hypothesis are also mandatory
+                    const eRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
+                    const eExpression = eRule.conclusion;
+                    for (eExpression) |cvToken| if (cvToken.cv == .V) {
+                        _ = try mandatoryVariables.add(cvToken.token);
+                    };
                 },
             }
         }
@@ -456,5 +464,18 @@ test "iterate over single $f hypothesis" {
     var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
     defer it.deinit();
     expect(eq(it.next().?, "wph"));
+    expect(it.next() == null);
+}
+
+test "iterate with $e hypothesis" {
+    var state = try VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+    try state.addStatementsFrom("$c wff |- $. $v ph ps ta $. wta $f wff ta $. wph $f wff ph $. hyp $e wff ta $.");
+
+    var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
+    defer it.deinit();
+    expect(eq(it.next().?, "wta"));
+    expect(eq(it.next().?, "wph"));
+    expect(eq(it.next().?, "hyp"));
     expect(it.next() == null);
 }
