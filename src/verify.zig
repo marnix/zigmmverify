@@ -116,10 +116,10 @@ const VerifyState = struct {
                     _ = try self.meanings.put(fStatement.label, Meaning{ .Rule = try self.fromHypothesis(fStatement.tokens) });
                     const variable = fStatement.tokens.at(1).*;
                     if (self.meanings.get(variable)) |kv2| {
-                        if (kv2.value != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable, TODO: test
+                        if (kv2.value != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable,
                         if (kv2.value.Variable.usedInFStatement) return Error.Duplicate;
                         kv2.value.Variable.usedInFStatement = true;
-                    } else return Error.UnexpectedToken; // $f k x $. without $v x $.  TODO: Test
+                    } else unreachable; // $f k x $. without $v x $. is already detected in fromHypothesis() call above
                     _ = try self.activeHypotheses.push(.{ .label = fStatement.label, .fe = .F });
                     if (self.currentScopeDiff) |scopeDiff| {
                         scopeDiff.nrActiveHypotheses += 1;
@@ -144,7 +144,10 @@ const VerifyState = struct {
                 .P => |pStatement| {
                     if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
                     _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(pStatement.tokens) });
-                    //TODO: verify proof
+                    //TODO: verify proof, both compressed and uncompressed
+                },
+                .D => {
+                    // TODO: implement $d handling
                 },
                 .BlockOpen => {
                     try ScopeDiff.push(self);
@@ -153,9 +156,6 @@ const VerifyState = struct {
                     if (self.currentScopeDiff) |scopeDiff| {
                         scopeDiff.pop();
                     } else return Error.UnexpectedToken;
-                },
-                else => {
-                    // TODO: implement the other statements, then remove this clause
                 },
             }
         }
@@ -303,7 +303,6 @@ test "simplest correct $f" {
 }
 
 test "tokenlist to expression" {
-    // TODO: Simplify this test case using a few helpers and/or refactorings.
     var state = try VerifyState.init(std.testing.allocator);
     defer state.deinit();
     _ = try state.meanings.put("wff", MeaningType.Constant);
@@ -346,6 +345,14 @@ test "$f in nested scope (1)" {
 
 test "$f in nested scope (2)" {
     try verify("$c ca $. $v v $. ${ cav $f ca v $. $}", std.testing.allocator);
+}
+
+test "$f using two constants" {
+    expectError(Error.UnexpectedToken, verify("$c wff $. wwff $f wff wff $.", std.testing.allocator));
+}
+
+test "$f using undeclared variable" {
+    expectError(Error.UnexpectedToken, verify("$c wff $. wps $f wff ps $.", std.testing.allocator));
 }
 
 test "token is either constant or variable, not both" {
