@@ -10,6 +10,8 @@ const TokenSet = tokenize.TokenSet;
 const TokenMap = tokenize.TokenMap;
 const parse = @import("parse.zig");
 
+const SinglyLinkedList = std.SinglyLinkedList;
+
 const CVToken = struct { token: Token, cv: enum { C, V } };
 const Expression = []CVToken;
 const Hypothesis = struct { expression: Expression, isF: bool };
@@ -369,14 +371,21 @@ const MHIterator = struct {
 
     state: *VerifyState,
     allocator: *Allocator,
+    mhs: SinglyLinkedList(Token),
+    iterator: ?*SinglyLinkedList(Token).Node,
 
     /// expression remains owned by the caller
     fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) MHIterator {
-        return MHIterator{ .state = state, .allocator = allocator };
+        var mhs = SinglyLinkedList(Token).init();
+        // TODO: add all mandatory hypotheses to the front of mhs
+        return MHIterator{ .state = state, .allocator = allocator, .mhs = mhs, .iterator = mhs.first };
     }
 
     fn next(self: *Self) ?Token { // TODO: Change return type to InferenceRule?
-        return null;
+        if (self.iterator) |node| {
+            self.iterator = node.next;
+            return node.data;
+        } else return null;
     }
 };
 
