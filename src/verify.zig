@@ -11,6 +11,7 @@ const TokenMap = tokenize.TokenMap;
 const parse = @import("parse.zig");
 
 const SinglyLinkedList = std.SinglyLinkedList;
+const FELabelList = std.SegmentedList(struct { label: Token, fe: enum { F, E } }, 0);
 
 const CVToken = struct { token: Token, cv: enum { C, V } };
 const Expression = []CVToken;
@@ -55,14 +56,14 @@ const VerifyState = struct {
 
     /// what each active token means
     meanings: TokenMap(Meaning),
-    activeHypotheses: TokenList,
+    activeHypotheses: FELabelList,
     currentScopeDiff: ?*ScopeDiff,
 
     fn init(allocator: *Allocator) !Self {
         return Self{
             .allocator = allocator,
             .meanings = TokenMap(Meaning).init(allocator),
-            .activeHypotheses = TokenList.init(allocator),
+            .activeHypotheses = FELabelList.init(allocator),
             .currentScopeDiff = null,
         };
     }
@@ -116,7 +117,7 @@ const VerifyState = struct {
                         if (kv2.value.Variable.usedInFStatement) return Error.Duplicate;
                         kv2.value.Variable.usedInFStatement = true;
                     } else return Error.UnexpectedToken; // $f k x $. without $v x $.  TODO: Test
-                    _ = try self.activeHypotheses.push(fStatement.label);
+                    _ = try self.activeHypotheses.push(.{ .label = fStatement.label, .fe = .F });
                     if (self.currentScopeDiff) |scopeDiff| {
                         scopeDiff.nrActiveHypotheses += 1;
                         _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
@@ -127,7 +128,7 @@ const VerifyState = struct {
                 .E => |eStatement| {
                     if (self.meanings.get(eStatement.label)) |_| return Error.Duplicate;
                     _ = try self.meanings.put(eStatement.label, Meaning{ .Rule = try self.fromHypothesis(eStatement.tokens) });
-                    _ = try self.activeHypotheses.push(eStatement.label);
+                    _ = try self.activeHypotheses.push(.{ .label = eStatement.label, .fe = .E });
                     if (self.currentScopeDiff) |scopeDiff| {
                         scopeDiff.nrActiveHypotheses += 1;
                         _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
