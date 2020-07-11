@@ -388,9 +388,14 @@ const MHIterator = struct {
         while (it.prev()) |activeHypothesis| {
             switch (activeHypothesis.fe) {
                 .F => {
-                    //TODO only if $f's variable in variables
-                    var node = try mhs.createNode(activeHypothesis.label, allocator);
-                    mhs.prepend(node);
+                    const fRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
+                    assert(fRule.conclusion.len == 2);
+                    assert(fRule.conclusion[1].cv == .V);
+                    const fVariable = fRule.conclusion[1].token;
+                    if (variables.contains(fVariable)) {
+                        var node = try mhs.createNode(activeHypothesis.label, allocator);
+                        mhs.prepend(node);
+                    }
                 },
                 .E => {
                     var node = try mhs.createNode(activeHypothesis.label, allocator);
@@ -403,7 +408,10 @@ const MHIterator = struct {
         return MHIterator{ .state = state, .allocator = allocator, .mhs = mhs };
     }
 
-    // TODO: add deinit() for error scenarios, which loops over mhs and frees all nodes
+    fn deinit(self: *Self) void {
+        // loop over all nodes so that all get freed
+        while (self.next()) |_| {}
+    }
 
     fn next(self: *Self) ?Token { // TODO: Change return type to InferenceRule?
         if (self.mhs.popFirst()) |node| {
@@ -436,14 +444,17 @@ test "iterate over no mandatory hypotheses" {
     try state.addStatementsFrom("$c T $.");
 
     var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "T"));
+    defer it.deinit();
     expect(it.next() == null);
 }
 
 test "iterate over single $f hypothesis" {
     var state = try VerifyState.init(std.testing.allocator);
     defer state.deinit();
-    try state.addStatementsFrom("$c wff |- $. $v ph $. wph $f wff ph $.");
+    try state.addStatementsFrom("$c wff |- $. $v ph ps $. wph $f wff ph $. wps $f wff ps $.");
 
     var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
+    defer it.deinit();
     expect(eq(it.next().?, "wph"));
+    expect(it.next() == null);
 }

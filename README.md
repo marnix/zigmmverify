@@ -30,10 +30,9 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 - Finish the iterator for 'mandatory hypotheses for given expression':
 
-   * Go backwards over the active hypotheses list, and
+   * When going backwards over the active hypotheses list:
 
-      - add the variables from that $e hypothesis;
-      - select only the $f hypotheses for a known variable.
+      - add the variables from that $e hypothesis.
 
 - For each $a and $p statement, build the corresponding `InferenceRule`.
 
