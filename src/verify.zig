@@ -77,6 +77,75 @@ const VerifyState = struct {
         self.activeHypotheses.deinit();
     }
 
+    fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
+        var n: u64 = 0;
+        defer std.debug.warn("\nFound {0} statements!\n", .{n});
+
+        var statements = parse.StatementIterator.init(self.allocator, buffer);
+        while (try statements.next()) |statement| {
+            defer statement.deinit(self.allocator);
+            n += 1;
+
+            switch (statement.*) {
+                .C => |cStatement| {
+                    if (self.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
+                    var it = @as(TokenList, cStatement.constants).iterator(0);
+                    while (it.next()) |constant| {
+                        if (self.meanings.get(constant.*)) |_| return Error.Duplicate;
+                        const kv = try self.meanings.put(constant.*, MeaningType.Constant);
+                    }
+                },
+                .V => |vStatement| {
+                    var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
+                    while (it.next()) |variable| {
+                        if (self.meanings.get(variable.*)) |_| return Error.Duplicate;
+                        const kv = try self.meanings.put(variable.*, Meaning{ .Variable = .{ .usedInFStatement = false } });
+                        if (self.currentScopeDiff) |scopeDiff| {
+                            _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
+                        }
+                    }
+                },
+                .F => |fStatement| {
+                    if (self.meanings.get(fStatement.label)) |_| return Error.Duplicate;
+                    _ = try self.meanings.put(fStatement.label, Meaning{ .Rule = try self.fromHypothesis(fStatement.tokens) });
+                    const variable = fStatement.tokens.at(1).*;
+                    if (self.meanings.get(variable)) |kv2| {
+                        if (kv2.value != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable, TODO: test
+                        if (kv2.value.Variable.usedInFStatement) return Error.Duplicate;
+                        kv2.value.Variable.usedInFStatement = true;
+                    } else return Error.UnexpectedToken; // $f k x $. without $v x $.  TODO: Test
+                    _ = try self.activeHypotheses.push(fStatement.label);
+                    if (self.currentScopeDiff) |scopeDiff| {
+                        scopeDiff.nrActiveHypotheses += 1;
+                        _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
+                        assert(!scopeDiff.variablesInFStatements.contains(variable));
+                        _ = try scopeDiff.variablesInFStatements.add(variable);
+                    }
+                },
+                .E => |eStatement| {
+                    if (self.meanings.get(eStatement.label)) |_| return Error.Duplicate;
+                    _ = try self.meanings.put(eStatement.label, Meaning{ .Rule = try self.fromHypothesis(eStatement.tokens) });
+                    _ = try self.activeHypotheses.push(eStatement.label);
+                    if (self.currentScopeDiff) |scopeDiff| {
+                        scopeDiff.nrActiveHypotheses += 1;
+                        _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
+                    }
+                },
+                .BlockOpen => {
+                    try ScopeDiff.push(self);
+                },
+                .BlockClose => {
+                    if (self.currentScopeDiff) |scopeDiff| {
+                        scopeDiff.pop();
+                    } else return Error.UnexpectedToken;
+                },
+                else => {
+                    // TODO: implement the other statements, then remove this clause
+                },
+            }
+        }
+    }
+
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
     fn fromHypothesis(self: *Self, tokens: TokenList) !InferenceRule {
         const expression = try self.expressionOf(tokens);
@@ -173,77 +242,9 @@ const ScopeDiff = struct {
 
 pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
     errdefer |err| std.debug.warn("\nError {0} happened...\n", .{err});
-
-    var n: u64 = 0;
-    defer std.debug.warn("\nFound {0} statements!\n", .{n});
-
     var state = try VerifyState.init(allocator);
     defer state.deinit();
-
-    var statements = parse.StatementIterator.init(allocator, buffer);
-    while (try statements.next()) |statement| {
-        defer statement.deinit(allocator);
-        n += 1;
-
-        switch (statement.*) {
-            .C => |cStatement| {
-                if (state.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
-                var it = @as(TokenList, cStatement.constants).iterator(0);
-                while (it.next()) |constant| {
-                    if (state.meanings.get(constant.*)) |_| return Error.Duplicate;
-                    const kv = try state.meanings.put(constant.*, MeaningType.Constant);
-                }
-            },
-            .V => |vStatement| {
-                var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
-                while (it.next()) |variable| {
-                    if (state.meanings.get(variable.*)) |_| return Error.Duplicate;
-                    const kv = try state.meanings.put(variable.*, Meaning{ .Variable = .{ .usedInFStatement = false } });
-                    if (state.currentScopeDiff) |scopeDiff| {
-                        _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
-                    }
-                }
-            },
-            .F => |fStatement| {
-                if (state.meanings.get(fStatement.label)) |_| return Error.Duplicate;
-                _ = try state.meanings.put(fStatement.label, Meaning{ .Rule = try state.fromHypothesis(fStatement.tokens) });
-                const variable = fStatement.tokens.at(1).*;
-                if (state.meanings.get(variable)) |kv2| {
-                    if (kv2.value != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable, TODO: test
-                    if (kv2.value.Variable.usedInFStatement) return Error.Duplicate;
-                    kv2.value.Variable.usedInFStatement = true;
-                } else return Error.UnexpectedToken; // $f k x $. without $v x $.  TODO: Test
-                _ = try state.activeHypotheses.push(fStatement.label);
-                if (state.currentScopeDiff) |scopeDiff| {
-                    scopeDiff.nrActiveHypotheses += 1;
-                    _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
-                    assert(!scopeDiff.variablesInFStatements.contains(variable));
-                    _ = try scopeDiff.variablesInFStatements.add(variable);
-                }
-            },
-            .E => |eStatement| {
-                if (state.meanings.get(eStatement.label)) |_| return Error.Duplicate;
-                _ = try state.meanings.put(eStatement.label, Meaning{ .Rule = try state.fromHypothesis(eStatement.tokens) });
-                _ = try state.activeHypotheses.push(eStatement.label);
-                if (state.currentScopeDiff) |scopeDiff| {
-                    scopeDiff.nrActiveHypotheses += 1;
-                    _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
-                }
-            },
-            .BlockOpen => {
-                try ScopeDiff.push(&state);
-            },
-            .BlockClose => {
-                if (state.currentScopeDiff) |scopeDiff| {
-                    scopeDiff.pop();
-                } else return Error.UnexpectedToken;
-            },
-            else => {
-                // TODO: implement the other statements, then remove this clause
-            },
-        }
-    }
-
+    try state.addStatementsFrom(buffer);
     if (state.currentScopeDiff) |_| return Error.Incomplete; // unclosed $}
 }
 
