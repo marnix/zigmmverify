@@ -17,15 +17,14 @@ const FELabelList = std.SegmentedList(FELabel, 0);
 const CVToken = struct { token: Token, cv: enum { C, V } };
 const Expression = []CVToken;
 const Hypothesis = struct { expression: Expression, isF: bool };
-const HypothesisList = []Hypothesis;
 const InferenceRule = struct {
     const Self = @This();
 
-    hypotheses: HypothesisList,
+    hypotheses: []Hypothesis,
     conclusion: Expression,
 
     fn deinit(self: *Self, allocator: *Allocator) void {
-        // Later: deinit the hypotheses
+        allocator.free(self.hypotheses);
         allocator.free(self.conclusion);
     }
 };
@@ -175,9 +174,8 @@ const VerifyState = struct {
         };
     }
 
-    /// consumes the passed expression
+    /// caller keeps owning the passed expression
     fn mandatoryHypothesesOf(self: *Self, expression: Expression) !MHIterator {
-        defer self.allocator.free(expression);
         return try MHIterator.init(self, self.allocator, expression);
     }
 
@@ -185,7 +183,7 @@ const VerifyState = struct {
     fn fromHypothesis(self: *Self, tokens: TokenList) !InferenceRule {
         const expression = try self.expressionOf(tokens);
         return InferenceRule{
-            .hypotheses = &[_]Hypothesis{}, //TODO: Is this safe because it is comptime known?
+            .hypotheses = try self.allocator.alloc(Hypothesis, 0), // TODO: It seems we just can use &[_]Hypothesis{} ??
             .conclusion = expression,
         };
     }
@@ -486,7 +484,9 @@ test "iterate over no mandatory hypotheses" {
     defer state.deinit();
     try state.addStatementsFrom("$c T $.");
 
-    var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "T"));
+    var expression = try expressionOf(&state, "T");
+    defer std.testing.allocator.free(expression);
+    var it = try state.mandatoryHypothesesOf(expression);
     defer it.deinit();
     assert(it.count() == 0);
     expect(it.next() == null);
@@ -497,7 +497,9 @@ test "iterate over single $f hypothesis" {
     defer state.deinit();
     try state.addStatementsFrom("$c wff |- $. $v ph ps $. wph $f wff ph $. wps $f wff ps $.");
 
-    var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
+    var expression = try expressionOf(&state, "|- ph");
+    defer std.testing.allocator.free(expression);
+    var it = try state.mandatoryHypothesesOf(expression);
     defer it.deinit();
     var item: ?FELabel = null;
     assert(it.count() == 1);
@@ -514,7 +516,9 @@ test "iterate with $e hypothesis" {
     defer state.deinit();
     try state.addStatementsFrom("$c wff |- $. $v ph ps ta $. wta $f wff ta $. wph $f wff ph $. hyp $e wff ta $.");
 
-    var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
+    var expression = try expressionOf(&state, "|- ph");
+    defer std.testing.allocator.free(expression);
+    var it = try state.mandatoryHypothesesOf(expression);
     defer it.deinit();
     var item: ?FELabel = null;
     assert(it.count() == 3);
@@ -544,4 +548,7 @@ test "inference rule with $f and $e mandatory hypotheses" {
 
     const alltrueRule = state.meanings.get("alltrue").?.value.Rule;
     expect(alltrueRule.hypotheses.len == 3);
+    expect(eq(alltrueRule.hypotheses[1].expression[1].token, "ph"));
+    std.debug.warn("\nfirst token of conclusion is {0}.\n", .{alltrueRule.conclusion[0].token});
+    expect(eq(alltrueRule.conclusion[0].token, "|-"));
 }
