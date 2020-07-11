@@ -135,18 +135,13 @@ const VerifyState = struct {
                     }
                 },
                 .A => |aStatement| {
-                    var it = try self.mandatoryHypothesesOf(try self.expressionOf(aStatement.tokens));
-                    while (it.next()) |_| {
-                        //...do something...
-                    }
-                    it.deinit();
+                    if (self.meanings.get(aStatement.label)) |_| return Error.Duplicate;
+                    _ = try self.meanings.put(aStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(aStatement.tokens) });
                 },
                 .P => |pStatement| {
-                    var it = try self.mandatoryHypothesesOf(try self.expressionOf(pStatement.tokens));
-                    while (it.next()) |_| {
-                        //...do something...
-                    }
-                    it.deinit();
+                    if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
+                    _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(pStatement.tokens) });
+                    //TODO: verify proof
                 },
                 .BlockOpen => {
                     try ScopeDiff.push(self);
@@ -161,6 +156,21 @@ const VerifyState = struct {
                 },
             }
         }
+    }
+
+    fn inferenceRuleOf(self: *Self, tokens: TokenList) !InferenceRule {
+        const conclusion = try self.expressionOf(tokens);
+        var it = try self.mandatoryHypothesesOf(conclusion);
+        defer it.deinit();
+        var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
+        var i: usize = 0;
+        while (it.next()) |mandatoryHypothesisLabel| : (i += 1) {
+            hypotheses[i] = .{ .expression = self.meanings.get(mandatoryHypothesisLabel).?.value.Rule.conclusion, .isF = false }; //TODO: get isF!!!
+        }
+        return InferenceRule{
+            .hypotheses = hypotheses,
+            .conclusion = conclusion,
+        };
     }
 
     /// consumes the passed expression
@@ -387,6 +397,7 @@ const MHIterator = struct {
     state: *VerifyState,
     allocator: *Allocator,
     mhs: SinglyLinkedList(Token),
+    len: usize,
 
     /// expression remains owned by the caller
     fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) !MHIterator {
@@ -398,6 +409,7 @@ const MHIterator = struct {
         };
 
         var mhs = SinglyLinkedList(Token).init();
+        var len: usize = 0;
         // loop over state.activeHypotheses, in reverse order
         var it = state.activeHypotheses.iterator(state.activeHypotheses.count());
         while (it.prev()) |activeHypothesis| {
@@ -411,12 +423,14 @@ const MHIterator = struct {
                         // include every $f for every mandatory variable
                         var node = try mhs.createNode(activeHypothesis.label, allocator);
                         mhs.prepend(node);
+                        len += 1;
                     }
                 },
                 .E => {
                     // include every $e
                     var node = try mhs.createNode(activeHypothesis.label, allocator);
                     mhs.prepend(node);
+                    len += 1;
                     // the variables of the $e hypothesis are also mandatory
                     const eRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
                     const eExpression = eRule.conclusion;
@@ -427,7 +441,7 @@ const MHIterator = struct {
             }
         }
 
-        return MHIterator{ .state = state, .allocator = allocator, .mhs = mhs };
+        return MHIterator{ .state = state, .allocator = allocator, .mhs = mhs, .len = len };
     }
 
     fn deinit(self: *Self) void {
@@ -435,9 +449,14 @@ const MHIterator = struct {
         while (self.next()) |_| {}
     }
 
+    fn count(self: *Self) usize {
+        return self.len;
+    }
+
     fn next(self: *Self) ?Token { // TODO: Change return type to InferenceRule?
         if (self.mhs.popFirst()) |node| {
             defer self.mhs.destroyNode(node, self.allocator);
+            self.len -= 1;
             return node.data;
         } else return null;
     }
@@ -467,6 +486,7 @@ test "iterate over no mandatory hypotheses" {
 
     var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "T"));
     defer it.deinit();
+    assert(it.count() == 0);
     expect(it.next() == null);
 }
 
@@ -477,6 +497,7 @@ test "iterate over single $f hypothesis" {
 
     var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
     defer it.deinit();
+    assert(it.count() == 1);
     expect(eq(it.next().?, "wph"));
     expect(it.next() == null);
 }
@@ -488,8 +509,10 @@ test "iterate with $e hypothesis" {
 
     var it = try state.mandatoryHypothesesOf(try expressionOf(&state, "|- ph"));
     defer it.deinit();
+    assert(it.count() == 3);
     expect(eq(it.next().?, "wta"));
     expect(eq(it.next().?, "wph"));
+    assert(it.count() == 1);
     expect(eq(it.next().?, "hyp"));
     expect(it.next() == null);
 }

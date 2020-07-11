@@ -30,7 +30,7 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 - For each $a and $p statement, build the corresponding `InferenceRule`.
 
-  This uses the above iterator.
+  This uses the 'mandatory hypothesis' iterator.
 
 - For each $p statement, run the proof.
   For compressed proofs, don't decompress-then-run:
