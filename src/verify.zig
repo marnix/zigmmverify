@@ -56,7 +56,10 @@ const VerifyState = struct {
 
     /// what each active token means
     meanings: TokenMap(Meaning),
+    /// the active hypotheses, and whether they are $f or $e
     activeHypotheses: FELabelList,
+    /// the difference between the current nested scope
+    /// and its immediately surrounding scope
     currentScopeDiff: ?*ScopeDiff,
 
     fn init(allocator: *Allocator) !Self {
@@ -69,15 +72,15 @@ const VerifyState = struct {
     }
 
     fn deinit(self: *Self) void {
+        while (self.currentScopeDiff) |scopeDiff| {
+            scopeDiff.pop();
+        }
+        self.activeHypotheses.deinit();
         var it = self.meanings.iterator();
         while (it.next()) |kv| {
             kv.value.deinit(self.allocator);
         }
         self.meanings.deinit();
-        while (self.currentScopeDiff) |scopeDiff| {
-            scopeDiff.pop();
-        }
-        self.activeHypotheses.deinit();
     }
 
     fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
@@ -209,7 +212,7 @@ const VerifyState = struct {
     }
 };
 
-/// A ScopeDiff represents how a nested scope differs from its outer scope:
+/// A ScopeDiff represents how a nested scope differs from its immediately surrounding scope:
 /// which tokens and labels will become inactive again at its ` $} ` statement.
 const ScopeDiff = struct {
     const Self = @This();
@@ -264,10 +267,7 @@ const ScopeDiff = struct {
         while (it.next()) |kv| {
             if (self.state.meanings.remove(kv.key)) |*kv2| {
                 kv2.value.deinit(self.state.allocator);
-            } else {
-                std.debug.warn("\nTODO: insert meaning for token {0}.\n", .{kv.key});
-                // this is reachable in error paths, unfortunately. TODO: Try to fix
-            }
+            } else unreachable;
         }
         self.activeTokens.deinit();
     }
@@ -549,6 +549,5 @@ test "inference rule with $f and $e mandatory hypotheses" {
     const alltrueRule = state.meanings.get("alltrue").?.value.Rule;
     expect(alltrueRule.hypotheses.len == 3);
     expect(eq(alltrueRule.hypotheses[1].expression[1].token, "ph"));
-    std.debug.warn("\nfirst token of conclusion is {0}.\n", .{alltrueRule.conclusion[0].token});
     expect(eq(alltrueRule.conclusion[0].token, "|-"));
 }
