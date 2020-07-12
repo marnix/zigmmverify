@@ -1,0 +1,23 @@
+name: Build with zig 0.6.0
+
+on: [push, pull_request]
+        
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: 0.6.0
+      - run: |
+          curl --silent --location https://github.com/metamath/set.mm/raw/develop/set.mm --output set.mm
+          zig build
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: 0.6.0
+      - run: zig fmt --check build.zig src/*.zig
