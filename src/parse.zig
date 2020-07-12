@@ -68,8 +68,8 @@ pub const StatementIterator = struct {
             label = token;
             token = (try self.nextToken()) orelse return Error.Incomplete;
         }
-        if (token[0] != '$') return Error.UnexpectedToken; //TODO: Test
-        if (token.len != 2) return Error.IllegalToken; //TODO: Test
+        if (token[0] != '$') return Error.UnexpectedToken;
+        if (token.len != 2) return Error.IllegalToken;
         var result: *Statement = undefined;
         switch (token[1]) { // handle the $x command
             'c' => {
@@ -174,6 +174,41 @@ fn forNext(statements: *StatementIterator, f: var) !void {
     const s = try statements.next();
     _ = f.do(s);
     s.?.deinit(std.testing.allocator);
+}
+
+test "`$xy` token after label" {
+    var statements = StatementIterator.init(std.testing.allocator, "$xy");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "`$xy` token after label" {
+    var statements = StatementIterator.init(std.testing.allocator, "aLabel $xy");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "`$` token without label" {
+    var statements = StatementIterator.init(std.testing.allocator, "$");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "`$` token after label" {
+    var statements = StatementIterator.init(std.testing.allocator, "aLabel $");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "non-$ token after label" {
+    var statements = StatementIterator.init(std.testing.allocator, "aLabel nonCommand");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedToken);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
 }
 
 test "parse $p declaration" {
