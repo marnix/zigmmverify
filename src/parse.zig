@@ -62,10 +62,10 @@ pub const StatementIterator = struct {
             return null;
         };
         // if the token is a label, read one more token
-        var label: ?Token = null;
-        while (label == null) {
+        var optLabel: ?Token = null;
+        while (optLabel == null) {
             if (token[0] == '$') break;
-            label = token;
+            optLabel = token;
             token = (try self.nextToken()) orelse return Error.Incomplete;
         }
         if (token[0] != '$') return Error.UnexpectedToken;
@@ -83,22 +83,24 @@ pub const StatementIterator = struct {
                 });
             },
             'f' => {
-                defer label = null;
-                var t = try self.nextUntil("$.");
-                if (t.count() < 2) return Error.Incomplete; //TODO: Test
-                if (t.count() > 2) return Error.UnexpectedToken; //TODO: Test
+                defer optLabel = null;
+                const label = optLabel orelse return Error.MissingLabel;
+                var tokens = try self.nextUntil("$.");
+                errdefer tokens.deinit();
+                if (tokens.count() < 2) return Error.Incomplete;
+                if (tokens.count() > 2) return Error.UnexpectedToken;
                 result = try self.statement(.{
                     .F = .{
-                        .label = label orelse return Error.MissingLabel, //TODO: Test
-                        .tokens = t,
+                        .label = label,
+                        .tokens = tokens,
                     },
                 });
             },
             'e' => {
-                defer label = null;
+                defer optLabel = null;
                 result = try self.statement(.{
                     .E = .{
-                        .label = label orelse return Error.MissingLabel, //TODO: Test
+                        .label = optLabel orelse return Error.MissingLabel,
                         .tokens = try self.nextUntil("$."),
                     },
                 });
@@ -109,31 +111,31 @@ pub const StatementIterator = struct {
                 });
             },
             'a' => {
-                defer label = null;
+                defer optLabel = null;
                 result = try self.statement(.{
                     .A = .{
-                        .label = label orelse return Error.MissingLabel, //TODO: Test
+                        .label = optLabel orelse return Error.MissingLabel,
                         .tokens = try self.nextUntil("$."),
                     },
                 });
             },
             'p' => {
-                defer label = null;
+                defer optLabel = null;
                 result = try self.statement(.{
                     .P = .{
-                        .label = label orelse return Error.MissingLabel, //TODO: Test
+                        .label = optLabel orelse return Error.MissingLabel,
                         .tokens = try self.nextUntil("$="),
                         .proof = try self.nextUntil("$."),
                     },
                 });
             },
-            '{' => return self.statement(.{ .BlockOpen = .{} }),
-            '}' => return self.statement(.{ .BlockClose = .{} }),
-            else => return Error.IllegalToken, //TODO: Test
+            '{' => result = try self.statement(.{ .BlockOpen = .{} }),
+            '}' => result = try self.statement(.{ .BlockClose = .{} }),
+            else => return Error.IllegalToken,
         }
-        if (label) |_| {
+        if (optLabel) |_| {
             self.optStatement = result;
-            return Error.UnexpectedLabel; //TODO: Test
+            return Error.UnexpectedLabel;
         }
         return result;
     }
@@ -174,6 +176,108 @@ fn forNext(statements: *StatementIterator, f: var) !void {
     const s = try statements.next();
     _ = f.do(s);
     s.?.deinit(std.testing.allocator);
+}
+
+test "$c with label" {
+    var statements = StatementIterator.init(std.testing.allocator, "c $c T $.");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    _ = try forNext(&statements, struct {
+        fn do(s: var) void {
+            expect(s != null);
+        }
+    });
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "$v with label" {
+    var statements = StatementIterator.init(std.testing.allocator, "v $v a $.");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    _ = try forNext(&statements, struct {
+        fn do(s: var) void {
+            expect(s != null);
+        }
+    });
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "$f without label" {
+    var statements = StatementIterator.init(std.testing.allocator, "$f");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "$e without label" {
+    var statements = StatementIterator.init(std.testing.allocator, "$e");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "$d with label" {
+    var statements = StatementIterator.init(std.testing.allocator, "dxy $d x y $.");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    _ = try forNext(&statements, struct {
+        fn do(s: var) void {
+            expect(s != null);
+        }
+    });
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "$a without label" {
+    var statements = StatementIterator.init(std.testing.allocator, "$a");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "$p without label" {
+    var statements = StatementIterator.init(std.testing.allocator, "$p");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "${ with label" {
+    var statements = StatementIterator.init(std.testing.allocator, "block ${");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    _ = try forNext(&statements, struct {
+        fn do(s: var) void {
+            expect(s != null);
+        }
+    });
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "$} with label" {
+    var statements = StatementIterator.init(std.testing.allocator, "endblock $}");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    _ = try forNext(&statements, struct {
+        fn do(s: var) void {
+            expect(s != null);
+        }
+    });
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "unknown statement type (token skipped)" {
+    var statements = StatementIterator.init(std.testing.allocator, "x $x");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "too short $f statement" {
+    var statements = StatementIterator.init(std.testing.allocator, "w $f wff $.");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.Incomplete);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
 }
 
 test "`$xy` token after label" {
