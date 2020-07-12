@@ -1,4 +1,4 @@
-name: Build with zig 0.6.0
+name: Build with zig master
 
 on: [push, pull_request]
         
@@ -9,7 +9,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.6.0
+          version: master
       - run: |
           curl --silent --location https://github.com/metamath/set.mm/raw/develop/set.mm --output set.mm
           zig build
@@ -19,5 +19,5 @@ jobs:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.6.0
+          version: master
       - run: zig fmt --check build.zig src/*.zig
