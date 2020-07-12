@@ -1,3 +1,7 @@
+name: Build with zig 0.6.0
+
+on: [push, pull_request]
+        
 jobs:
   build:
     runs-on: ubuntu-latest
