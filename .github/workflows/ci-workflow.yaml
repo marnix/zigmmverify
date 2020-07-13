@@ -1,6 +1,10 @@
 name: Build with zig master
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '23 3 * * *'
         
 jobs:
   build:
