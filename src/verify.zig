@@ -254,10 +254,13 @@ const ScopeDiff = struct {
     fn deinitVariableInFStatements(self: *Self) void {
         var it = self.variablesInFStatements.iterator();
         while (it.next()) |kv| {
-            var kv2 = self.state.meanings.get(kv.key) orelse continue;
-            assert(kv2.value == .Variable);
-            assert(kv2.value.Variable.usedInFStatement == true);
-            kv2.value.Variable.usedInFStatement = false;
+            const variable = kv.key;
+            if (self.state.meanings.get(variable)) |kv2| {
+                const meaning = kv2.value;
+                assert(meaning == .Variable);
+                assert(meaning.Variable.usedInFStatement == true);
+            } else continue;
+            _ = self.state.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = false } }) catch unreachable; // in-place update can't fail?
         }
         self.variablesInFStatements.deinit();
     }
