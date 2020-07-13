@@ -18,8 +18,8 @@ pub const TokenSet = struct {
     }
 
     pub fn add(self: *Self, token: Token) !bool {
-        const kv = try self.map.put(token, void_value);
-        if (kv) |_| return true; // already present
+        if (self.map.contains(token)) return true; // already present
+        try self.map.put(token, void_value);
         return false;
     }
 
@@ -46,7 +46,7 @@ pub const TokenIterator = struct {
     index: u64 = 0,
     optError: ?Error = null,
 
-    fn next(self: *TokenIterator) !?Token {
+    pub fn next(self: *TokenIterator) !?Token {
         // return any error detected in the previous call
         if (self.optError) |err| {
             self.optError = null;

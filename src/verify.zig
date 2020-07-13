@@ -113,13 +113,13 @@ const VerifyState = struct {
                 },
                 .F => |fStatement| {
                     if (self.meanings.get(fStatement.label)) |_| return Error.Duplicate;
-                    _ = try self.meanings.put(fStatement.label, Meaning{ .Rule = try self.fromHypothesis(fStatement.tokens) });
+                    try self.meanings.put(fStatement.label, Meaning{ .Rule = try self.fromHypothesis(fStatement.tokens) });
                     const variable = fStatement.tokens.at(1).*;
-                    if (self.meanings.get(variable)) |kv2| {
-                        if (kv2.value != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable,
-                        if (kv2.value.Variable.usedInFStatement) return Error.Duplicate;
-                        kv2.value.Variable.usedInFStatement = true;
+                    if (self.meanings.get(variable)) |meaning| {
+                        if (meaning != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable,
+                        if (meaning.Variable.usedInFStatement) return Error.Duplicate;
                     } else unreachable; // $f k x $. without $v x $. is already detected in fromHypothesis() call above
+                    try self.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = true } });
                     _ = try self.activeHypotheses.push(.{ .label = fStatement.label, .fe = .F });
                     if (self.currentScopeDiff) |scopeDiff| {
                         scopeDiff.nrActiveHypotheses += 1;
@@ -130,7 +130,7 @@ const VerifyState = struct {
                 },
                 .E => |eStatement| {
                     if (self.meanings.get(eStatement.label)) |_| return Error.Duplicate;
-                    _ = try self.meanings.put(eStatement.label, Meaning{ .Rule = try self.fromHypothesis(eStatement.tokens) });
+                    try self.meanings.put(eStatement.label, Meaning{ .Rule = try self.fromHypothesis(eStatement.tokens) });
                     _ = try self.activeHypotheses.push(.{ .label = eStatement.label, .fe = .E });
                     if (self.currentScopeDiff) |scopeDiff| {
                         scopeDiff.nrActiveHypotheses += 1;
@@ -139,11 +139,11 @@ const VerifyState = struct {
                 },
                 .A => |aStatement| {
                     if (self.meanings.get(aStatement.label)) |_| return Error.Duplicate;
-                    _ = try self.meanings.put(aStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(aStatement.tokens) });
+                    try self.meanings.put(aStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(aStatement.tokens) });
                 },
                 .P => |pStatement| {
                     if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
-                    _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(pStatement.tokens) });
+                    try self.meanings.put(pStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(pStatement.tokens) });
                     //TODO: verify proof, both compressed and uncompressed
                 },
                 .D => {
@@ -169,7 +169,7 @@ const VerifyState = struct {
         var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
         var i: usize = 0;
         while (it.next()) |feLabel| : (i += 1) {
-            hypotheses[i] = .{ .expression = self.meanings.get(feLabel.label).?.value.Rule.conclusion, .isF = (feLabel.fe == .F) };
+            hypotheses[i] = .{ .expression = self.meanings.get(feLabel.label).?.Rule.conclusion, .isF = (feLabel.fe == .F) };
         }
         return InferenceRule{
             .hypotheses = hypotheses,
@@ -198,10 +198,10 @@ const VerifyState = struct {
         var i: usize = 0;
         var it = @as(TokenList, tokens).iterator(0);
         while (it.next()) |pToken| : (i += 1) {
-            const kv = self.meanings.get(pToken.*) orelse return Error.UnexpectedToken;
+            const meaning = self.meanings.get(pToken.*) orelse return Error.UnexpectedToken;
             result[i] = .{
                 .token = pToken.*,
-                .cv = switch (kv.value) {
+                .cv = switch (meaning) {
                     .Constant => .C,
                     .Variable => .V,
                     else => return Error.UnexpectedToken,
@@ -254,10 +254,12 @@ const ScopeDiff = struct {
     fn deinitVariableInFStatements(self: *Self) void {
         var it = self.variablesInFStatements.iterator();
         while (it.next()) |kv| {
-            var kv2 = self.state.meanings.get(kv.key) orelse continue;
-            assert(kv2.value == .Variable);
-            assert(kv2.value.Variable.usedInFStatement == true);
-            kv2.value.Variable.usedInFStatement = false;
+            const variable = kv.key;
+            if (self.state.meanings.get(variable)) |meaning| {
+                assert(meaning == .Variable);
+                assert(meaning.Variable.usedInFStatement == true);
+            } else continue;
+            self.state.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = false } }) catch unreachable; // in-place update can't fail?
         }
         self.variablesInFStatements.deinit();
     }
@@ -305,8 +307,8 @@ test "simplest correct $f" {
 test "tokenlist to expression" {
     var state = try VerifyState.init(std.testing.allocator);
     defer state.deinit();
-    _ = try state.meanings.put("wff", MeaningType.Constant);
-    _ = try state.meanings.put("ph", Meaning{ .Variable = .{ .usedInFStatement = false } });
+    try state.meanings.put("wff", MeaningType.Constant);
+    try state.meanings.put("ph", Meaning{ .Variable = .{ .usedInFStatement = false } });
     var tokens = TokenList.init(std.testing.allocator);
     defer tokens.deinit();
     try tokens.push("wff");
@@ -415,31 +417,33 @@ const MHIterator = struct {
             _ = try mandatoryVariables.add(cvToken.token);
         };
 
-        var mhs = SinglyLinkedList(FELabel).init();
+        var mhs = SinglyLinkedList(FELabel){};
         var len: usize = 0;
         // loop over state.activeHypotheses, in reverse order
         var it = state.activeHypotheses.iterator(state.activeHypotheses.count());
         while (it.prev()) |activeHypothesis| {
             switch (activeHypothesis.fe) {
                 .F => {
-                    const fRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
+                    const fRule = state.meanings.get(activeHypothesis.label).?.Rule;
                     assert(fRule.conclusion.len == 2);
                     assert(fRule.conclusion[1].cv == .V);
                     const fVariable = fRule.conclusion[1].token;
                     if (mandatoryVariables.contains(fVariable)) {
                         // include every $f for every mandatory variable
-                        var node = try mhs.createNode(.{ .label = activeHypothesis.label, .fe = .F }, allocator);
+                        var node = try allocator.create(@TypeOf(mhs).Node);
+                        node.* = @TypeOf(mhs).Node.init(.{ .label = activeHypothesis.label, .fe = .F });
                         mhs.prepend(node);
                         len += 1;
                     }
                 },
                 .E => {
                     // include every $e
-                    var node = try mhs.createNode(.{ .label = activeHypothesis.label, .fe = .E }, allocator);
+                    var node = try allocator.create(@TypeOf(mhs).Node);
+                    node.* = @TypeOf(mhs).Node.init(.{ .label = activeHypothesis.label, .fe = .E });
                     mhs.prepend(node);
                     len += 1;
                     // the variables of the $e hypothesis are also mandatory
-                    const eRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
+                    const eRule = state.meanings.get(activeHypothesis.label).?.Rule;
                     const eExpression = eRule.conclusion;
                     for (eExpression) |cvToken| if (cvToken.cv == .V) {
                         _ = try mandatoryVariables.add(cvToken.token);
@@ -462,7 +466,7 @@ const MHIterator = struct {
 
     fn next(self: *Self) ?FELabel {
         if (self.mhs.popFirst()) |node| {
-            defer self.mhs.destroyNode(node, self.allocator);
+            defer self.allocator.destroy(node);
             self.len -= 1;
             return node.data;
         } else return null;
@@ -553,7 +557,7 @@ test "inference rule with $f and $e mandatory hypotheses" {
 
     try state.addStatementsFrom("alltrue $a |- ph $.");
 
-    const alltrueRule = state.meanings.get("alltrue").?.value.Rule;
+    const alltrueRule = state.meanings.get("alltrue").?.Rule;
     expect(alltrueRule.hypotheses.len == 3);
     expect(eq(alltrueRule.hypotheses[1].expression[1].token, "ph"));
     expect(eq(alltrueRule.conclusion[0].token, "|-"));

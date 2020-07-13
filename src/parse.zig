@@ -140,7 +140,7 @@ pub const StatementIterator = struct {
         return result;
     }
 
-    fn nextToken(self: *StatementIterator) !?Token {
+    pub fn nextToken(self: *StatementIterator) !?Token {
         while (true) {
             const result = try self.tokens.next();
             if (result) |token| {
@@ -172,7 +172,7 @@ pub const StatementIterator = struct {
 
 const expect = std.testing.expect;
 
-fn forNext(statements: *StatementIterator, f: var) !void {
+fn forNext(statements: *StatementIterator, f: anytype) !void {
     const s = try statements.next();
     _ = f.do(s);
     s.?.deinit(std.testing.allocator);
@@ -182,7 +182,7 @@ test "$c with label" {
     var statements = StatementIterator.init(std.testing.allocator, "c $c T $.");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: var) void {
+        fn do(s: anytype) void {
             expect(s != null);
         }
     });
@@ -194,7 +194,7 @@ test "$v with label" {
     var statements = StatementIterator.init(std.testing.allocator, "v $v a $.");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: var) void {
+        fn do(s: anytype) void {
             expect(s != null);
         }
     });
@@ -220,7 +220,7 @@ test "$d with label" {
     var statements = StatementIterator.init(std.testing.allocator, "dxy $d x y $.");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: var) void {
+        fn do(s: anytype) void {
             expect(s != null);
         }
     });
@@ -246,7 +246,7 @@ test "${ with label" {
     var statements = StatementIterator.init(std.testing.allocator, "block ${");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: var) void {
+        fn do(s: anytype) void {
             expect(s != null);
         }
     });
@@ -258,7 +258,7 @@ test "$} with label" {
     var statements = StatementIterator.init(std.testing.allocator, "endblock $}");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: var) void {
+        fn do(s: anytype) void {
             expect(s != null);
         }
     });
@@ -318,7 +318,7 @@ test "non-$ token after label" {
 test "parse $p declaration" {
     var statements = StatementIterator.init(std.testing.allocator, "idwffph $p wff ph $= ? $.");
     _ = try forNext(&statements, struct {
-        fn do(s: var) void {
+        fn do(s: anytype) void {
             expect(eqs(s.?.P.tokens, &[_]Token{ "wff", "ph" }));
             expect(eqs(s.?.P.proof, &[_]Token{"?"}));
         }
@@ -330,7 +330,7 @@ test "parse $p declaration" {
 test "parse $f declaration" {
     var statements = StatementIterator.init(std.testing.allocator, "wph $f wff ph $.");
     _ = try forNext(&statements, struct {
-        fn do(s: var) void {
+        fn do(s: anytype) void {
             expect(eq(s.?.F.label, "wph"));
             expect(eqs(s.?.F.tokens, &[_]Token{ "wff", "ph" }));
         }
@@ -343,7 +343,7 @@ test "check error for label on $d" {
     var statements = StatementIterator.init(std.testing.allocator, "xfreeinA $d A x $.");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: var) void {
+        fn do(s: anytype) void {
             expect(eqs(s.?.D.variables, &[_]Token{ "A", "x" }));
         }
     });
@@ -361,7 +361,7 @@ test "check error for unknown command" {
 test "parse constant declaration" {
     var statements = StatementIterator.init(std.testing.allocator, "$c wff |- $.");
     _ = try forNext(&statements, struct {
-        fn do(s: var) void {
+        fn do(s: anytype) void {
             expect(eqs(s.?.C.constants, &[_]Token{ "wff", "|-" }));
         }
     });
