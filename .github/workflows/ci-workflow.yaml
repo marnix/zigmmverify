@@ -15,7 +15,7 @@ jobs:
         with:
           version: master
       - run: |
-          curl --silent --location https://github.com/metamath/set.mm/raw/develop/set.mm --output set.mm
+          wget https://github.com/metamath/set.mm/raw/develop/set.mm -O set.mm
           zig build
   lint:
     runs-on: ubuntu-latest
