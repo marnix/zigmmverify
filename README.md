@@ -1,5 +1,8 @@
 # A [Metamath](http://metamath.org) proof verifier in [Zig](https://ziglang.org/)
 
+Note that this branch is built using nightly 'master' zig.
+The more stable branch is zig-0.6.0.
+
 # Introduction
 
 At least, the beginnings of one.
