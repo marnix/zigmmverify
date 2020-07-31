@@ -1,9 +1,9 @@
+_Note that this branch is built using nightly 'master' zig.
+The more stable branch is zig-0.6.0._
+
+![Build with zig master](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%20master/badge.svg?branch=zig-master)
+
 # A [Metamath](http://metamath.org) proof verifier in [Zig](https://ziglang.org/)
-
-Note that this branch is built using nightly 'master' zig.
-The more stable branch is zig-0.6.0.
-
-# Introduction
 
 At least, the beginnings of one.
 
