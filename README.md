@@ -1,6 +1,6 @@
-# A [Metamath](http://metamath.org) proof verifier in [Zig](https://ziglang.org/)
+![Build with zig 0.6.0](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%200.6.0/badge.svg?branch=zig-0.6.0)
 
-# Introduction
+# A [Metamath](http://metamath.org) proof verifier in [Zig](https://ziglang.org/)
 
 At least, the beginnings of one.
 

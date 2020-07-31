@@ -46,7 +46,7 @@ pub const TokenIterator = struct {
     index: u64 = 0,
     optError: ?Error = null,
 
-    fn next(self: *TokenIterator) !?Token {
+    pub fn next(self: *TokenIterator) !?Token {
         // return any error detected in the previous call
         if (self.optError) |err| {
             self.optError = null;

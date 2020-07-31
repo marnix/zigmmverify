@@ -13,8 +13,7 @@ jobs:
         with:
           version: 0.6.0
       - run: |
-          wget https://github.com/metamath/set.mm/raw/develop/set.mm -O set.mm
-          zig build
+          wget --quiet https://github.com/metamath/set.mm/raw/develop/set.mm --output-document set.mm && zig build
   lint:
     runs-on: ubuntu-latest
     steps:
