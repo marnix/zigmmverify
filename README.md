@@ -1,4 +1,4 @@
-![Build with zig 0.6.0](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%200.6.0/badge.svg?branch=zig-0.6.0)
+[![Build with zig 0.6.0](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%200.6.0/badge.svg?branch=zig-0.6.0)](https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-0.6.0)
 
 # A [Metamath](http://metamath.org) proof verifier in [Zig](https://ziglang.org/)
 
@@ -24,12 +24,6 @@ For now, set.mm is hardcoded and must be in the current directory.
 Build using zig 0.6.0, then just run the resulting binary.
 
 # Next tasks
-
-- Make the badges links to
-  https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-master
-  and
-  https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-0.6.0
-  respectively.
 
 - Split `rule.zig` (which just iterates over all inference rules, renaming `VerifyState`?)
   off of `verify.zig`, so that
