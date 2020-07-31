@@ -53,3 +53,9 @@ Build using zig 0.6.0, then just run the resulting binary.
 - Don't use 'error union' for Metamath verification errors.
 
 - Create a proper main, rather than one that hardcodes set.mm.
+
+- Run the test suite from https://github.com/david-a-wheeler/metamath-test
+  probably by checking it out as a Git submodule
+  and having a binary that accepts a .mm file name
+  and exits with 0 if (and only if) the file and all its proofs
+  verify completly correctly.
