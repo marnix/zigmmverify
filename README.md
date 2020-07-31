@@ -16,7 +16,7 @@ and modules.
 
 Get set.mm from metamath.org or GitHub, or download an older version like so:
 ```
-curl --location https://github.com/metamath/set.mm/raw/b0925f0afd5963577ea76b252cb6613c885b393d/set.mm > set.mm
+wget https://github.com/metamath/set.mm/raw/b0925f0afd5963577ea76b252cb6613c885b393d/set.mm -O set.mm
 ```
 
 For now, set.mm is hardcoded and must be in the current directory.
@@ -24,6 +24,16 @@ For now, set.mm is hardcoded and must be in the current directory.
 Build using zig 0.6.0, then just run the resulting binary.
 
 # Next tasks
+
+- Make the badges links to
+  https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-master
+  and
+  https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-0.6.0
+  respectively.
+
+- Split `rule.zig` (which just iterates over all inference rules, renaming `VerifyState`?)
+  off of `verify.zig`, so that
+  the latter can verify proofs using a new `prove.zig`.
 
 - Clean-up / refactor VerifyState + ScopeDiff:
   Add methods, move functionality between these structs.
