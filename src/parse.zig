@@ -140,7 +140,7 @@ pub const StatementIterator = struct {
         return result;
     }
 
-    fn nextToken(self: *StatementIterator) !?Token {
+    pub fn nextToken(self: *StatementIterator) !?Token {
         while (true) {
             const result = try self.tokens.next();
             if (result) |token| {
