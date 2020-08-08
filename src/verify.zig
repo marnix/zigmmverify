@@ -8,16 +8,20 @@ const Token = tokenize.Token;
 const TokenList = tokenize.TokenList;
 const TokenSet = tokenize.TokenSet;
 const TokenMap = tokenize.TokenMap;
+
 const parse = @import("parse.zig");
+
+const prove = @import("prove.zig");
+const RuleMeaningMap = prove.RuleMeaningMap;
 
 const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
 const FELabelList = std.SegmentedList(FELabel, 0);
 
-const CVToken = struct { token: Token, cv: enum { C, V } };
-const Expression = []CVToken;
-const Hypothesis = struct { expression: Expression, isF: bool };
-const InferenceRule = struct {
+pub const CVToken = struct { token: Token, cv: enum { C, V } }; // TODO: make private again
+pub const Expression = []CVToken;
+pub const Hypothesis = struct { expression: Expression, isF: bool };
+pub const InferenceRule = struct {
     const Self = @This();
 
     hypotheses: []Hypothesis,
@@ -49,7 +53,12 @@ const Meaning = union(MeaningType) {
     }
 };
 
-const VerifyState = struct {
+/// A helper that is needed inside VerifyState, since `self.getRuleMeaningOf` doesn't work, somehow...
+fn getRuleMeaningOf(state: *VerifyState, token: Token) anyerror!InferenceRule {
+    return state.getRuleMeaningOf(token);
+}
+
+pub const VerifyState = struct {
     const Self = @This();
 
     allocator: *Allocator,
@@ -84,6 +93,8 @@ const VerifyState = struct {
     }
 
     fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
+        const selfAsRuleMeaningMap = RuleMeaningMap(*VerifyState){ .child = self, .getter = getRuleMeaningOf };
+
         var n: u64 = 0;
         defer std.debug.warn("\nFound {0} statements!\n", .{n});
 
@@ -143,8 +154,10 @@ const VerifyState = struct {
                 },
                 .P => |pStatement| {
                     if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
-                    _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(pStatement.tokens) });
-                    //TODO: verify proof, both compressed and uncompressed
+                    const rule = try self.inferenceRuleOf(pStatement.tokens);
+                    _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = rule });
+                    const resultExpression = try prove.runProof(pStatement.proof, rule.hypotheses, selfAsRuleMeaningMap);
+                    // TODO: Verify that resultExpression is equal to rule.conclusion
                 },
                 .D => {
                     // TODO: implement $d handling
@@ -159,6 +172,11 @@ const VerifyState = struct {
                 },
             }
         }
+    }
+
+    /// caller does not get ownership
+    fn getRuleMeaningOf(self: *Self, token: Token) anyerror!InferenceRule {
+        return self.meanings.get(token).?.value.Rule; // TODO: proper error handling!  (not present; not Rule)
     }
 
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
