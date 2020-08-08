@@ -25,6 +25,8 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 # Next tasks
 
+- Verify that 'normal' tokens don't start with `$`.
+
 - Split `rule.zig` (which just iterates over all inference rules, renaming `VerifyState`?)
   off of `verify.zig`, so that
   the latter can verify proofs using a new `prove.zig`.
