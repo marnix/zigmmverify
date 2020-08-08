@@ -277,7 +277,7 @@ const ScopeDiff = struct {
                 const meaning = kv2.value;
                 assert(meaning == .Variable);
                 assert(meaning.Variable.usedInFStatement == true);
-            } else continue;
+            } else unreachable;
             _ = self.state.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = false } }) catch unreachable; // in-place update can't fail?
         }
         self.variablesInFStatements.deinit();
