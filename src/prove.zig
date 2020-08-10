@@ -14,20 +14,16 @@ const Hypothesis = verify.Hypothesis;
 const InferenceRule = verify.InferenceRule;
 const VerifyState = verify.VerifyState;
 
-pub fn RuleMeaningMap(comptime T: type) type {
+pub fn AsRuleMeaningMap(comptime T: type) type {
     return struct {
         const Self = @This();
         child: T,
         getter: fn (T, Token) anyerror!InferenceRule,
-        /// This is just an abbreviation, to make the caller better readable.
-        fn get(self: Self, token: Token) anyerror!InferenceRule {
-            return (self.getter)(self.child, token);
-        }
     };
 }
 
-pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, state: var) !Expression {
-    // TODO: assert, in some way, that @TypeOf(state) is a type returned by RuleMeaningMap()
+pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var) !Expression {
+    // TODO: assert, in some way, that @TypeOf(ruleMeaningMap) is a type returned by AsRuleMeaningMap()
     const Modes = enum { Initial, Uncompressed, CompressedPart1, CompressedPart2 };
     var mode = Modes.Initial;
 
@@ -47,14 +43,14 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, state: var) !Express
                     }
                 },
                 .Uncompressed => {
-                    const rule: InferenceRule = try state.get(t.*);
+                    const rule: InferenceRule = try (ruleMeaningMap.getter)(t.*);
                     // TODO: Push on proof stack
                 },
                 .CompressedPart1 => {
                     if (eq(t.*, ")")) {
                         mode = .CompressedPart2;
                     } else {
-                        const rule: InferenceRule = try state.get(t.*);
+                        const rule: InferenceRule = try (ruleMeaningMap.getter)(t.*);
                         // TODO: add to list
                     }
                 },

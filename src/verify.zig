@@ -53,11 +53,6 @@ const Meaning = union(MeaningType) {
     }
 };
 
-/// A helper that is needed inside VerifyState, since `self.getRuleMeaningOf` doesn't work, somehow...
-fn getRuleMeaningOf(state: *VerifyState, token: Token) anyerror!InferenceRule {
-    return state.getRuleMeaningOf(token);
-}
-
 pub const VerifyState = struct {
     const Self = @This();
 
@@ -93,7 +88,7 @@ pub const VerifyState = struct {
     }
 
     fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
-        const selfAsRuleMeaningMap = RuleMeaningMap(*VerifyState){ .child = self, .getter = getRuleMeaningOf };
+        const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
 
         var n: u64 = 0;
         defer std.debug.warn("\nFound {0} statements!\n", .{n});
