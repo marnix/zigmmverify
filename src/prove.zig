@@ -18,7 +18,7 @@ pub fn AsRuleMeaningMap(comptime T: type) type {
     return struct {
         const Self = @This();
         child: T,
-        getter: fn (T, Token) anyerror!InferenceRule,
+        getter: fn (T, Token) anyerror!InferenceRule, // TODO: Change to Error!InferenceRule ?
         /// This is just an abbreviation, to make the caller better readable.
         fn get(self: Self, token: Token) anyerror!InferenceRule {
             return (self.getter)(self.child, token);
@@ -26,12 +26,47 @@ pub fn AsRuleMeaningMap(comptime T: type) type {
     };
 }
 
-pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var) !Expression {
+const ProofStack = struct {
+    const Self = @This();
+    expressions: std.SegmentedList(Expression, 0),
+
+    fn init(allocator: *Allocator) Self {
+        return ProofStack{ .expressions = std.SegmentedList(Expression, 0).init(allocator) };
+    }
+    fn deinit(self: *Self) void {
+        self.expressions.deinit();
+    }
+
+    fn isEmpty(self: *Self) bool {
+        return self.expressions.len == 0;
+    }
+    fn top(self: *Self) Expression {
+        return self.expressions.at(self.expressions.len - 1).*;
+    }
+
+    fn pushExpression(self: *Self, expression: Expression) !void {
+        try self.expressions.push(expression);
+    }
+    fn pushInferenceRule(self: *Self, rule: InferenceRule) !void {
+        // TODO: find substitution
+        // TODO: perform substitution
+        // TODO: check+pop hypotheses
+        try self.pushExpression(rule.conclusion); // TODO: use substituted conclusion instead
+    }
+};
+
+pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var, allocator: *Allocator) !Expression {
     // TODO: assert, in some way, that @TypeOf(ruleMeaningMap) is a type returned by AsRuleMeaningMap()
     const Modes = enum { Initial, Uncompressed, CompressedPart1, CompressedPart2 };
     var mode = Modes.Initial;
 
-    // TODO: Keep proof stack, singly linked list? segmented list?
+    var proofStack = ProofStack.init(allocator);
+    defer proofStack.deinit();
+    var compressedNumber: usize = 0;
+    var compressedLabels = TokenList.init(allocator);
+    defer compressedLabels.deinit();
+    var markedExpressions = std.SegmentedList(Expression, 0).init(allocator);
+    defer markedExpressions.deinit();
 
     var it = @as(TokenList, proof).iterator(0);
     while (it.next()) |t| {
@@ -47,27 +82,62 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var)
                     }
                 },
                 .Uncompressed => {
-                    const rule: InferenceRule = try ruleMeaningMap.get(t.*);
-                    // TODO: Push on proof stack
+                    try proofStack.pushInferenceRule(try ruleMeaningMap.get(t.*));
                 },
                 .CompressedPart1 => {
                     if (eq(t.*, ")")) {
                         mode = .CompressedPart2;
                     } else {
-                        const rule: InferenceRule = try ruleMeaningMap.get(t.*);
-                        // TODO: add to list
+                        try compressedLabels.push(t.*);
                     }
                 },
                 .CompressedPart2 => {
-                    // TODO: handle every character of t.*, building numbers
-                    // TODO: handle every completed number
+                    for (t.*) |c| {
+                        // handle every character of t.*, building numbers
+                        if ('U' <= c and c <= 'Y') {
+                            compressedNumber = compressedNumber * 5 + (c - 'U' + 1);
+                        } else if ('A' <= c and c <= 'T') {
+                            compressedNumber = compressedNumber * 20 + (c - 'A' + 1);
+                            // we have a complete number now
+                            brk: {
+                                var i = compressedNumber;
+                                std.debug.assert(i > 0);
+                                i -= 1;
+                                // hypotheses...
+                                if (i < hypotheses.len) {
+                                    break :brk try proofStack.pushExpression(hypotheses[i].expression);
+                                }
+                                i -= hypotheses.len;
+                                // ...labels between parentheses...
+                                if (i < compressedLabels.len) {
+                                    break :brk try proofStack.pushInferenceRule(try ruleMeaningMap.get(compressedLabels.at(i).*));
+                                }
+                                i -= compressedLabels.len;
+                                // ...expressions marked with 'Z'
+                                if (i < markedExpressions.len) {
+                                    break :brk try proofStack.pushExpression(markedExpressions.at(i).*);
+                                }
+                                return Error.NumberTooLarge; // TODO: test
+                            }
+                            compressedNumber = 0;
+                        } else if (c == 'Z') {
+                            // special case: not a number, but a back reference
+                            if (compressedNumber != 0) return Error.NumberIncomplete; // 'Z' in the middle of a number, TODO: test
+                            if (proofStack.isEmpty()) return Error.NumberZEarly; // 'Z' with empty proof stack, at the very beginning, TODO: test
+                            try markedExpressions.push(proofStack.top());
+                        }
+                    }
                 },
             }
             if (!reprocessCurrentToken) break;
         }
     }
+    if (mode == .CompressedPart1) return Error.Incomplete; // TODO: test
 
-    return &[_]verify.CVToken{};
+    if (proofStack.isEmpty()) return Error.Incomplete; // TODO: test
+    // TODO: if (proofStack.length() > 1) return Error.UnexpectedToken; // TODO: test; better error code?
+
+    return proofStack.top();
 }
 
 // ----------------------------------------------------------------------------

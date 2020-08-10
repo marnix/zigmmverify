@@ -10,4 +10,8 @@ pub const Error = error{
     UnexpectedLabel,
     // semantical errors
     Duplicate,
+    // compressed proof errors
+    NumberIncomplete,
+    NumberZEarly,
+    NumberTooLarge,
 };

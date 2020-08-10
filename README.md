@@ -54,6 +54,8 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 - Support $[ ... $] includes.  (Presumably in the tokenizer.)
 
+- Support `?` in proofs.
+
 - Identify the location (line/column) of at least the first error.
 
 - Don't use 'error union' for Metamath verification errors.

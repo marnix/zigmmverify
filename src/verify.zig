@@ -151,7 +151,7 @@ pub const VerifyState = struct {
                     if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
                     const rule = try self.inferenceRuleOf(pStatement.tokens);
                     _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = rule });
-                    const resultExpression = try prove.runProof(pStatement.proof, rule.hypotheses, selfAsRuleMeaningMap);
+                    const resultExpression = try prove.runProof(pStatement.proof, rule.hypotheses, selfAsRuleMeaningMap, self.allocator);
                     // TODO: Verify that resultExpression is equal to rule.conclusion
                 },
                 .D => {
