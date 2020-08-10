@@ -19,6 +19,10 @@ pub fn AsRuleMeaningMap(comptime T: type) type {
         const Self = @This();
         child: T,
         getter: fn (T, Token) anyerror!InferenceRule,
+        /// This is just an abbreviation, to make the caller better readable.
+        fn get(self: Self, token: Token) anyerror!InferenceRule {
+            return (self.getter)(self.child, token);
+        }
     };
 }
 
@@ -43,14 +47,14 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var)
                     }
                 },
                 .Uncompressed => {
-                    const rule: InferenceRule = try (ruleMeaningMap.getter)(t.*);
+                    const rule: InferenceRule = try ruleMeaningMap.get(t.*);
                     // TODO: Push on proof stack
                 },
                 .CompressedPart1 => {
                     if (eq(t.*, ")")) {
                         mode = .CompressedPart2;
                     } else {
-                        const rule: InferenceRule = try (ruleMeaningMap.getter)(t.*);
+                        const rule: InferenceRule = try ruleMeaningMap.get(t.*);
                         // TODO: add to list
                     }
                 },

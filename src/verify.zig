@@ -12,7 +12,7 @@ const TokenMap = tokenize.TokenMap;
 const parse = @import("parse.zig");
 
 const prove = @import("prove.zig");
-const RuleMeaningMap = prove.RuleMeaningMap;
+const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
 const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
