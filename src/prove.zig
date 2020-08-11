@@ -6,6 +6,7 @@ const Error = errors.Error;
 const tokenize = @import("tokenize.zig");
 const Token = tokenize.Token;
 const TokenList = tokenize.TokenList;
+const TokenMap = tokenize.TokenMap;
 const eq = tokenize.eq;
 
 const verify = @import("verify.zig");
@@ -13,6 +14,8 @@ const Expression = verify.Expression;
 const Hypothesis = verify.Hypothesis;
 const InferenceRule = verify.InferenceRule;
 const VerifyState = verify.VerifyState;
+
+const Substitution = TokenMap(Expression);
 
 pub fn AsRuleMeaningMap(comptime T: type) type {
     return struct {
@@ -28,10 +31,11 @@ pub fn AsRuleMeaningMap(comptime T: type) type {
 
 const ProofStack = struct {
     const Self = @This();
+    allocator: *Allocator,
     expressions: std.SegmentedList(Expression, 0),
 
     fn init(allocator: *Allocator) Self {
-        return ProofStack{ .expressions = std.SegmentedList(Expression, 0).init(allocator) };
+        return ProofStack{ .allocator = allocator, .expressions = std.SegmentedList(Expression, 0).init(allocator) };
     }
     fn deinit(self: *Self) void {
         self.expressions.deinit();
@@ -48,7 +52,21 @@ const ProofStack = struct {
         try self.expressions.push(expression);
     }
     fn pushInferenceRule(self: *Self, rule: InferenceRule) !void {
-        // TODO: find substitution
+        const nrHyp = rule.hypotheses.len;
+        var hypotheses = try self.allocator.alloc(Expression, nrHyp);
+        var j = nrHyp;
+        while (j > 0) : (j -= 1) {
+            hypotheses[nrHyp - j] = self.expressions.pop() orelse return Error.Incomplete; // TODO: test
+        }
+        var substitution = Substitution.init(self.allocator);
+        var i: usize = 0;
+        while (i < nrHyp) : (i += 1) {
+            const hyp = rule.hypotheses[i];
+            if (hyp.isF) {
+                std.debug.assert(hyp.expression.len == 2);
+                _ = try substitution.put(hyp.expression[1].token, hypotheses[i][1..]); // TODO: check hypotheses[i] not empty slice
+            }
+        }
         // TODO: perform substitution
         // TODO: check+pop hypotheses
         try self.pushExpression(rule.conclusion); // TODO: use substituted conclusion instead
