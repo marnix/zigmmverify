@@ -14,13 +14,32 @@ const parse = @import("parse.zig");
 const prove = @import("prove.zig");
 const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
+// TODO: move to new utils.zig?
+fn sliceCopy(comptime T: type, allocator: *Allocator, original: []T) ![]T {
+    var copy = try allocator.alloc(T, original.len);
+    errdefer allocator.free(copy);
+    std.mem.copy(T, copy, original);
+    return copy;
+}
+
 const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
 const FELabelList = std.SegmentedList(FELabel, 0);
 
 pub const CVToken = struct { token: Token, cv: enum { C, V } }; // TODO: make private again
 pub const Expression = []CVToken;
-pub const Hypothesis = struct { expression: Expression, isF: bool };
+
+pub const Hypothesis = struct {
+    const Self = @This();
+
+    expression: Expression,
+    isF: bool,
+
+    fn deinit(self: *Self, allocator: *Allocator) void {
+        allocator.free(self.expression);
+    }
+};
+
 pub const InferenceRule = struct {
     const Self = @This();
 
@@ -28,6 +47,9 @@ pub const InferenceRule = struct {
     conclusion: Expression,
 
     fn deinit(self: *Self, allocator: *Allocator) void {
+        for (self.hypotheses) |*hyp| {
+            hyp.deinit(allocator);
+        }
         allocator.free(self.hypotheses);
         allocator.free(self.conclusion);
     }
@@ -182,7 +204,11 @@ pub const VerifyState = struct {
         var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
         var i: usize = 0;
         while (it.next()) |feLabel| : (i += 1) {
-            hypotheses[i] = .{ .expression = self.meanings.get(feLabel.label).?.value.Rule.conclusion, .isF = (feLabel.fe == .F) };
+            const hypExpression = self.meanings.get(feLabel.label).?.value.Rule.conclusion;
+            hypotheses[i] = .{
+                .expression = try sliceCopy(CVToken, self.allocator, hypExpression),
+                .isF = (feLabel.fe == .F),
+            };
         }
         return InferenceRule{
             .hypotheses = hypotheses,
@@ -353,6 +379,23 @@ test "duplicate variable declarations, in nested scope (2)" {
 
 test "$v in nested scope" {
     try verify("$c ca $. ${ $v v $. $}", std.testing.allocator);
+}
+
+test "$v in nested scope, used in $a (use-after-free reproduction)" {
+    var state = try VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+
+    try state.addStatementsFrom("$c class setvar $. ${ $v x $. vx.cv $f setvar x $. cv $a class x $.");
+    const cv: InferenceRule = state.meanings.get("cv").?.value.Rule;
+    const vx_cv: Hypothesis = cv.hypotheses[0];
+    const x: Token = vx_cv.expression[1].token;
+    expect(eq(x, "x"));
+
+    try state.addStatementsFrom("$}");
+    const cv2: InferenceRule = state.meanings.get("cv").?.value.Rule;
+    const vx_cv2: Hypothesis = cv.hypotheses[0];
+    const x2: Token = vx_cv.expression[1].token;
+    expect(eq(x2, "x"));
 }
 
 test "$f in nested scope (1)" {
