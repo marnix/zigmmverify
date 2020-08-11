@@ -26,7 +26,7 @@ const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
 const FELabelList = std.SegmentedList(FELabel, 0);
 
-pub const CVToken = struct { token: Token, cv: enum { C, V } }; // TODO: make private again
+const CVToken = struct { token: Token, cv: enum { C, V } };
 pub const Expression = []CVToken;
 
 pub const Hypothesis = struct {
@@ -55,7 +55,6 @@ pub const InferenceRule = struct {
     }
 };
 
-const Substitution = TokenMap(Expression);
 const ProofState = std.SinglyLinkedList(Expression);
 
 // TODO: Find a better name; {Token,Label,Symbol}Interpretation?
@@ -193,7 +192,8 @@ pub const VerifyState = struct {
 
     /// caller does not get ownership
     fn getRuleMeaningOf(self: *Self, token: Token) anyerror!InferenceRule {
-        return self.meanings.get(token).?.value.Rule; // TODO: proper error handling!  (not present; not Rule)
+        // TODO: proper error handling! (not present; not Rule); TODO: test
+        return self.meanings.get(token).?.value.Rule;
     }
 
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
@@ -204,6 +204,7 @@ pub const VerifyState = struct {
         var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
         var i: usize = 0;
         while (it.next()) |feLabel| : (i += 1) {
+            //TODO: proper error handling! (not present; not rule; >0 hypotheses); TODO: test
             const hypExpression = self.meanings.get(feLabel.label).?.value.Rule.conclusion;
             hypotheses[i] = .{
                 .expression = try sliceCopy(CVToken, self.allocator, hypExpression),
