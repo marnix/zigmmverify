@@ -53,11 +53,15 @@ const ProofStack = struct {
     }
     fn pushInferenceRule(self: *Self, rule: InferenceRule) !void {
         const nrHyp = rule.hypotheses.len;
+
+        // pop hypotheses
         var hypotheses = try self.allocator.alloc(Expression, nrHyp);
         var j = nrHyp;
         while (j > 0) : (j -= 1) {
             hypotheses[nrHyp - j] = self.expressions.pop() orelse return Error.Incomplete; // TODO: test
         }
+
+        // build substitution based on $f
         var substitution = Substitution.init(self.allocator);
         var i: usize = 0;
         while (i < nrHyp) : (i += 1) {
@@ -67,8 +71,9 @@ const ProofStack = struct {
                 _ = try substitution.put(hyp.expression[1].token, hypotheses[i][1..]); // TODO: check hypotheses[i] not empty slice
             }
         }
-        // TODO: perform substitution
-        // TODO: check+pop hypotheses
+
+        // TODO:check substitution for $e
+
         try self.pushExpression(rule.conclusion); // TODO: use substituted conclusion instead
     }
 };
@@ -161,3 +166,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
 // ----------------------------------------------------------------------------
 
 const expect = std.testing.expect;
+
+test "compare expressions" {
+    // TODO
+}
