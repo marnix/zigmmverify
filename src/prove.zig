@@ -62,6 +62,7 @@ const ProofStack = struct {
 
         // pop hypotheses
         var hypotheses = try self.allocator.alloc(Expression, nrHyp);
+        defer self.allocator.free(hypotheses);
         var j = nrHyp;
         while (j > 0) : (j -= 1) {
             hypotheses[nrHyp - j] = self.expressions.pop() orelse return Error.Incomplete; // TODO: test
@@ -69,6 +70,7 @@ const ProofStack = struct {
 
         // build substitution based on $f
         var substitution = Substitution.init(self.allocator);
+        defer substitution.deinit();
         var i: usize = 0;
         while (i < nrHyp) : (i += 1) {
             const hyp = rule.hypotheses[i];
