@@ -1,5 +1,7 @@
 usingnamespace @import("globals.zig");
 
+const SegmentedList = std.SegmentedList;
+
 const errors = @import("errors.zig");
 const Error = errors.Error;
 
@@ -167,24 +169,58 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
     return proofStack.top();
 }
 
+/// caller becomes owner of allocated result
+fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Expression {
+    var resultAsList = SegmentedList(verify.CVToken, 0).init(allocator);
+    defer resultAsList.deinit();
+    for (orig) |cvToken| {
+        if (subst.get(cvToken.token)) |kv| {
+            // TODO: check cvToken.cv == .V
+            const repl: Expression = kv.value;
+            for (repl) |replCVToken| {
+                try resultAsList.push(replCVToken);
+            }
+        } else {
+            try resultAsList.push(cvToken);
+        }
+    }
+
+    var result = try allocator.alloc(verify.CVToken, resultAsList.len);
+    var it = resultAsList.iterator(0);
+    var i: usize = 0;
+    while (it.next()) |pCVToken| : (i += 1) result[i] = pCVToken.*;
+    return result;
+}
+
 // ----------------------------------------------------------------------------
 
 const expect = std.testing.expect;
 
+test "simple substitution" {
+    const original = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    var substitution = Substitution.init(std.testing.allocator);
+    defer substitution.deinit();
+    _ = try substitution.put("x", &[_]verify.CVToken{.{ .token = "y", .cv = .V }});
+    const expected = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "y", .cv = .V } };
+    const actual = try substitute(original, substitution, std.testing.allocator);
+    defer std.testing.allocator.free(actual);
+    expect(eqExpr(actual, expected));
+}
+
 test "compare equal expressions" {
-    const a = @as(Expression, &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } });
-    const b = @as(Expression, &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } });
+    const a = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const b = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
     expect(eqExpr(a, b));
 }
 
 test "compare unequal expressions" {
-    const a = @as(Expression, &[_]verify.CVToken{ .{ .token = "a", .cv = .C }, .{ .token = "x", .cv = .V } });
-    const b = @as(Expression, &[_]verify.CVToken{ .{ .token = "b", .cv = .C }, .{ .token = "x", .cv = .V } });
+    const a = &[_]verify.CVToken{ .{ .token = "a", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const b = &[_]verify.CVToken{ .{ .token = "b", .cv = .C }, .{ .token = "x", .cv = .V } };
     expect(!eqExpr(a, b));
 }
 
 test "compare unequal expressions, constant vs variable" {
-    const a = @as(Expression, &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } });
-    const b = @as(Expression, &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .C } });
+    const a = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const b = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .C } };
     expect(!eqExpr(a, b));
 }
