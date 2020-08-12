@@ -45,6 +45,9 @@ const ProofStack = struct {
     fn isEmpty(self: *Self) bool {
         return self.expressions.len == 0;
     }
+    fn isSingle(self: *Self) bool {
+        return self.expressions.len == 1;
+    }
     fn top(self: *Self) Expression {
         return self.expressions.at(self.expressions.len - 1).*;
     }
@@ -159,7 +162,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
     if (mode == .CompressedPart1) return Error.Incomplete; // TODO: test
 
     if (proofStack.isEmpty()) return Error.Incomplete; // TODO: test
-    // TODO: if (proofStack.length() > 1) return Error.UnexpectedToken; // TODO: test; better error code?
+    if (!proofStack.isSingle()) return Error.UnexpectedToken; // TODO: test; better error code?
 
     return proofStack.top();
 }
