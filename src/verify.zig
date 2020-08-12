@@ -15,7 +15,7 @@ const prove = @import("prove.zig");
 const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
 // TODO: move to new utils.zig?
-fn sliceCopy(comptime T: type, allocator: *Allocator, original: []T) ![]T {
+fn sliceCopy(comptime T: type, allocator: *Allocator, original: []const T) ![]const T {
     var copy = try allocator.alloc(T, original.len);
     errdefer allocator.free(copy);
     std.mem.copy(T, copy, original);
@@ -26,8 +26,16 @@ const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
 const FELabelList = std.SegmentedList(FELabel, 0);
 
-const CVToken = struct { token: Token, cv: enum { C, V } };
-pub const Expression = []CVToken;
+pub const CVToken = struct { token: Token, cv: enum { C, V } };
+pub const Expression = []const CVToken;
+
+pub fn eqExpr(a: Expression, b: Expression) bool {
+    if (a.len != b.len) return false;
+    for (a) |ai, i| {
+        if (!(eq(ai.token, b[i].token) and ai.cv == b[i].cv)) return false;
+    }
+    return true;
+}
 
 pub const Hypothesis = struct {
     const Self = @This();

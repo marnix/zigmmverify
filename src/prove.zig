@@ -11,6 +11,7 @@ const eq = tokenize.eq;
 
 const verify = @import("verify.zig");
 const Expression = verify.Expression;
+const eqExpr = verify.eqExpr;
 const Hypothesis = verify.Hypothesis;
 const InferenceRule = verify.InferenceRule;
 const VerifyState = verify.VerifyState;
@@ -167,6 +168,20 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
 
 const expect = std.testing.expect;
 
-test "compare expressions" {
-    // TODO
+test "compare equal expressions" {
+    const a = @as(Expression, &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } });
+    const b = @as(Expression, &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } });
+    expect(eqExpr(a, b));
+}
+
+test "compare unequal expressions" {
+    const a = @as(Expression, &[_]verify.CVToken{ .{ .token = "a", .cv = .C }, .{ .token = "x", .cv = .V } });
+    const b = @as(Expression, &[_]verify.CVToken{ .{ .token = "b", .cv = .C }, .{ .token = "x", .cv = .V } });
+    expect(!eqExpr(a, b));
+}
+
+test "compare unequal expressions, constant vs variable" {
+    const a = @as(Expression, &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } });
+    const b = @as(Expression, &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .C } });
+    expect(!eqExpr(a, b));
 }
