@@ -8,28 +8,90 @@ const Token = tokenize.Token;
 const TokenList = tokenize.TokenList;
 const TokenSet = tokenize.TokenSet;
 const TokenMap = tokenize.TokenMap;
+
 const parse = @import("parse.zig");
+
+const prove = @import("prove.zig");
+const AsRuleMeaningMap = prove.AsRuleMeaningMap;
+
+pub fn copyExpression(allocator: *Allocator, original: Expression) !Expression {
+    return try sliceCopy(CVToken, allocator, original);
+}
+
+// TODO: move to new utils.zig?
+fn sliceCopy(comptime T: type, allocator: *Allocator, original: []const T) ![]const T {
+    var copy = try allocator.alloc(T, original.len);
+    errdefer allocator.free(copy);
+    std.mem.copy(T, copy, original);
+    return copy;
+}
 
 const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
 const FELabelList = std.SegmentedList(FELabel, 0);
 
-const CVToken = struct { token: Token, cv: enum { C, V } };
-const Expression = []CVToken;
-const Hypothesis = struct { expression: Expression, isF: bool };
-const InferenceRule = struct {
+pub const CVToken = struct { token: Token, cv: enum { C, V } };
+pub const Expression = []const CVToken;
+
+pub fn eqExpr(a: Expression, b: Expression) bool {
+    const result = brk: {
+        if (a.len != b.len) break :brk false;
+        for (a) |ai, i| {
+            if (!(eq(ai.token, b[i].token) and ai.cv == b[i].cv)) break :brk false;
+        }
+        break :brk true;
+    };
+    if (!result) {
+        std.debug.warn("\neqExpr: expected = ", .{});
+        warnExpr(a);
+        std.debug.warn(", actual = ", .{});
+        warnExpr(b);
+        std.debug.warn(".\n", .{});
+    }
+    return result;
+}
+
+fn warnExpr(expr: Expression) void {
+    var sep: []const u8 = "";
+    for (expr) |cvToken| {
+        switch (cvToken.cv) {
+            .C => {
+                std.debug.warn("{1}{0}", .{ cvToken.token, sep });
+            },
+            .V => {
+                std.debug.warn("{1}${0}", .{ cvToken.token, sep });
+            },
+        }
+        sep = " ";
+    }
+}
+
+pub const Hypothesis = struct {
+    const Self = @This();
+
+    expression: Expression,
+    isF: bool,
+
+    fn deinit(self: *Self, allocator: *Allocator) void {
+        allocator.free(self.expression);
+    }
+};
+
+pub const InferenceRule = struct {
     const Self = @This();
 
     hypotheses: []Hypothesis,
     conclusion: Expression,
 
     fn deinit(self: *Self, allocator: *Allocator) void {
+        for (self.hypotheses) |*hyp| {
+            hyp.deinit(allocator);
+        }
         allocator.free(self.hypotheses);
         allocator.free(self.conclusion);
     }
 };
 
-const Substitution = TokenMap(Expression);
 const ProofState = std.SinglyLinkedList(Expression);
 
 // TODO: Find a better name; {Token,Label,Symbol}Interpretation?
@@ -49,7 +111,7 @@ const Meaning = union(MeaningType) {
     }
 };
 
-const VerifyState = struct {
+pub const VerifyState = struct {
     const Self = @This();
 
     allocator: *Allocator,
@@ -84,6 +146,8 @@ const VerifyState = struct {
     }
 
     fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
+        const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
+
         var n: u64 = 0;
         defer std.debug.warn("\nFound {0} statements!\n", .{n});
 
@@ -143,8 +207,12 @@ const VerifyState = struct {
                 },
                 .P => |pStatement| {
                     if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
-                    try self.meanings.put(pStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(pStatement.tokens) });
-                    //TODO: verify proof, both compressed and uncompressed
+                    const rule = try self.inferenceRuleOf(pStatement.tokens);
+                    _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = rule });
+                    // std.debug.warn("\nverifying proof of {0}.\n", .{pStatement.label});
+                    const resultExpression = try prove.runProof(pStatement.proof, rule.hypotheses, selfAsRuleMeaningMap, self.allocator);
+                    defer self.allocator.free(resultExpression);
+                    if (!eqExpr(resultExpression, rule.conclusion)) return Error.ResultMismatch;
                 },
                 .D => {
                     // TODO: implement $d handling
@@ -161,6 +229,12 @@ const VerifyState = struct {
         }
     }
 
+    /// caller does not get ownership
+    fn getRuleMeaningOf(self: *Self, token: Token) anyerror!InferenceRule {
+        // TODO: proper error handling! (not present; not Rule); TODO: test
+        return self.meanings.get(token).?.Rule;
+    }
+
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
     fn inferenceRuleOf(self: *Self, tokens: TokenList) !InferenceRule {
         const conclusion = try self.expressionOf(tokens);
@@ -169,7 +243,12 @@ const VerifyState = struct {
         var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
         var i: usize = 0;
         while (it.next()) |feLabel| : (i += 1) {
-            hypotheses[i] = .{ .expression = self.meanings.get(feLabel.label).?.Rule.conclusion, .isF = (feLabel.fe == .F) };
+            //TODO: proper error handling! (not present; not rule; >0 hypotheses); TODO: test
+            const hypExpression = self.meanings.get(feLabel.label).?.Rule.conclusion;
+            hypotheses[i] = .{
+                .expression = try copyExpression(self.allocator, hypExpression),
+                .isF = (feLabel.fe == .F),
+            };
         }
         return InferenceRule{
             .hypotheses = hypotheses,
@@ -258,8 +337,8 @@ const ScopeDiff = struct {
             if (self.state.meanings.get(variable)) |meaning| {
                 assert(meaning == .Variable);
                 assert(meaning.Variable.usedInFStatement == true);
-            } else continue;
-            self.state.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = false } }) catch unreachable; // in-place update can't fail?
+            } else unreachable;
+            _ = self.state.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = false } }) catch unreachable; // in-place update can't fail?
         }
         self.variablesInFStatements.deinit();
     }
@@ -339,6 +418,23 @@ test "duplicate variable declarations, in nested scope (2)" {
 
 test "$v in nested scope" {
     try verify("$c ca $. ${ $v v $. $}", std.testing.allocator);
+}
+
+test "$v in nested scope, used in $a (use-after-free reproduction)" {
+    var state = try VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+
+    try state.addStatementsFrom("$c class setvar $. ${ $v x $. vx.cv $f setvar x $. cv $a class x $.");
+    const cv: InferenceRule = state.meanings.get("cv").?.Rule;
+    const vx_cv: Hypothesis = cv.hypotheses[0];
+    const x: Token = vx_cv.expression[1].token;
+    expect(eq(x, "x"));
+
+    try state.addStatementsFrom("$}");
+    const cv2: InferenceRule = state.meanings.get("cv").?.Rule;
+    const vx_cv2: Hypothesis = cv.hypotheses[0];
+    const x2: Token = vx_cv.expression[1].token;
+    expect(eq(x2, "x"));
 }
 
 test "$f in nested scope (1)" {
