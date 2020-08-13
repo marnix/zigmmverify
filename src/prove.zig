@@ -84,7 +84,7 @@ const ProofStack = struct {
 
         // TODO:check substitution for $e
 
-        try self.pushExpression(rule.conclusion); // TODO: use substituted conclusion instead
+        try self.pushExpression(try substitute(rule.conclusion, substitution, self.allocator)); // TODO: use substituted conclusion instead
     }
 };
 

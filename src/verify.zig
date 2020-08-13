@@ -205,8 +205,9 @@ pub const VerifyState = struct {
                     if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
                     const rule = try self.inferenceRuleOf(pStatement.tokens);
                     _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = rule });
+                    // std.debug.warn("\nverifying proof of {0}.\n", .{pStatement.label});
                     const resultExpression = try prove.runProof(pStatement.proof, rule.hypotheses, selfAsRuleMeaningMap, self.allocator);
-                    // TODO: Verify that resultExpression is equal to rule.conclusion
+                    if (!eqExpr(resultExpression, rule.conclusion)) return Error.ResultMismatch;
                 },
                 .D => {
                     // TODO: implement $d handling
