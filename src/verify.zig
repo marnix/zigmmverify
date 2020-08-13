@@ -30,11 +30,36 @@ pub const CVToken = struct { token: Token, cv: enum { C, V } };
 pub const Expression = []const CVToken;
 
 pub fn eqExpr(a: Expression, b: Expression) bool {
-    if (a.len != b.len) return false;
-    for (a) |ai, i| {
-        if (!(eq(ai.token, b[i].token) and ai.cv == b[i].cv)) return false;
+    const result = brk: {
+        if (a.len != b.len) break :brk false;
+        for (a) |ai, i| {
+            if (!(eq(ai.token, b[i].token) and ai.cv == b[i].cv)) break :brk false;
+        }
+        break :brk true;
+    };
+    if (!result) {
+        std.debug.warn("\neqExpr: expected = ", .{});
+        warnExpr(a);
+        std.debug.warn(", actual = ", .{});
+        warnExpr(b);
+        std.debug.warn(".\n", .{});
     }
-    return true;
+    return result;
+}
+
+fn warnExpr(expr: Expression) void {
+    var sep: []const u8 = "";
+    for (expr) |cvToken| {
+        switch (cvToken.cv) {
+            .C => {
+                std.debug.warn("{1}{0}", .{ cvToken.token, sep });
+            },
+            .V => {
+                std.debug.warn("{1}${0}", .{ cvToken.token, sep });
+            },
+        }
+        sep = " ";
+    }
 }
 
 pub const Hypothesis = struct {
