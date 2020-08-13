@@ -42,9 +42,9 @@ pub fn eqExpr(a: Expression, b: Expression) bool {
         break :brk true;
     };
     if (!result) {
-        std.debug.warn("\neqExpr: expected = ", .{});
+        std.debug.warn("\neqExpr: actual = ", .{});
         warnExpr(a);
-        std.debug.warn(", actual = ", .{});
+        std.debug.warn(", expected = ", .{});
         warnExpr(b);
         std.debug.warn(".\n", .{});
     }

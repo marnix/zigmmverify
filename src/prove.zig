@@ -109,7 +109,7 @@ const ProofStack = struct {
                 if (!hyp.isF) {
                     const substitutedHyp = try substitute(hyp.expression, substitution, self.allocator);
                     defer self.allocator.free(substitutedHyp);
-                    if (!eqExpr(hypotheses[i], substitutedHyp)) return Error.HypothesisMismatch;
+                    if (!eqExpr(substitutedHyp, hypotheses[i])) return Error.HypothesisMismatch;
                 }
             }
         }
@@ -210,7 +210,7 @@ fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Exp
     defer resultAsList.deinit();
     for (orig) |cvToken| {
         if (subst.get(cvToken.token)) |kv| {
-            // TODO: check cvToken.cv == .V
+            if (cvToken.cv != .V) return Error.UnexpectedToken; // TODO: test
             const repl: Expression = kv.value;
             for (repl) |replCVToken| {
                 try resultAsList.push(replCVToken);
