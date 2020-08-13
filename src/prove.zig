@@ -14,6 +14,7 @@ const eq = tokenize.eq;
 const verify = @import("verify.zig");
 const Expression = verify.Expression;
 const eqExpr = verify.eqExpr;
+const copyExpression = verify.copyExpression;
 const Hypothesis = verify.Hypothesis;
 const InferenceRule = verify.InferenceRule;
 const VerifyState = verify.VerifyState;
@@ -36,12 +37,23 @@ const ProofStack = struct {
     const Self = @This();
     allocator: *Allocator,
     expressions: std.SegmentedList(Expression, 64),
+    /// we collect these and clean them up at the very end
+    ownedExpressions: std.SegmentedList(Expression, 64),
 
     fn init(allocator: *Allocator) Self {
-        return ProofStack{ .allocator = allocator, .expressions = std.SegmentedList(Expression, 64).init(allocator) };
+        return ProofStack{
+            .allocator = allocator,
+            .expressions = std.SegmentedList(Expression, 64).init(allocator),
+            .ownedExpressions = std.SegmentedList(Expression, 64).init(allocator),
+        };
     }
     fn deinit(self: *Self) void {
         self.expressions.deinit();
+        var it = self.ownedExpressions.iterator(0);
+        while (it.next()) |pOwnedExpression| {
+            self.allocator.free(pOwnedExpression.*);
+        }
+        self.ownedExpressions.deinit();
     }
 
     fn isEmpty(self: *Self) bool {
@@ -54,8 +66,11 @@ const ProofStack = struct {
         return self.expressions.at(self.expressions.len - 1).*;
     }
 
-    fn pushExpression(self: *Self, expression: Expression) !void {
+    fn pushExpression(self: *Self, expression: Expression, ownedByProofStack: bool) !void {
         try self.expressions.push(expression);
+        if (ownedByProofStack) {
+            try self.ownedExpressions.push(expression);
+        }
     }
     fn pushInferenceRule(self: *Self, rule: InferenceRule) !void {
         const nrHyp = rule.hypotheses.len;
@@ -90,15 +105,18 @@ const ProofStack = struct {
             while (i < nrHyp) : (i += 1) {
                 const hyp = rule.hypotheses[i];
                 if (!hyp.isF) {
-                    if (!eqExpr(hypotheses[i], try substitute(hyp.expression, substitution, self.allocator))) return Error.HypothesisMismatch;
+                    const substitutedHyp = try substitute(hyp.expression, substitution, self.allocator);
+                    defer self.allocator.free(substitutedHyp);
+                    if (!eqExpr(hypotheses[i], substitutedHyp)) return Error.HypothesisMismatch;
                 }
             }
         }
 
-        try self.pushExpression(try substitute(rule.conclusion, substitution, self.allocator));
+        try self.pushExpression(try substitute(rule.conclusion, substitution, self.allocator), true);
     }
 };
 
+/// caller becomes owner of allocated result
 pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var, allocator: *Allocator) !Expression {
     // TODO: assert, in some way, that @TypeOf(ruleMeaningMap) is a type returned by AsRuleMeaningMap()
     const Modes = enum { Initial, Uncompressed, CompressedPart1, CompressedPart2 };
@@ -149,7 +167,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
                                 i -= 1;
                                 // hypotheses...
                                 if (i < hypotheses.len) {
-                                    break :brk try proofStack.pushExpression(hypotheses[i].expression);
+                                    break :brk try proofStack.pushExpression(hypotheses[i].expression, false);
                                 }
                                 i -= hypotheses.len;
                                 // ...labels between parentheses...
@@ -159,7 +177,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
                                 i -= compressedLabels.len;
                                 // ...expressions marked with 'Z'
                                 if (i < markedExpressions.len) {
-                                    break :brk try proofStack.pushExpression(markedExpressions.at(i).*);
+                                    break :brk try proofStack.pushExpression(markedExpressions.at(i).*, false);
                                 }
                                 return Error.NumberTooLarge; // TODO: test
                             }
@@ -181,7 +199,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
     if (proofStack.isEmpty()) return Error.Incomplete; // TODO: test
     if (!proofStack.isSingle()) return Error.UnexpectedToken; // TODO: test; better error code?
 
-    return proofStack.top();
+    return try copyExpression(allocator, proofStack.top());
 }
 
 /// caller becomes owner of allocated result

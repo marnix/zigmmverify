@@ -14,6 +14,10 @@ const parse = @import("parse.zig");
 const prove = @import("prove.zig");
 const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
+pub fn copyExpression(allocator: *Allocator, original: Expression) !Expression {
+    return try sliceCopy(CVToken, allocator, original);
+}
+
 // TODO: move to new utils.zig?
 fn sliceCopy(comptime T: type, allocator: *Allocator, original: []const T) ![]const T {
     var copy = try allocator.alloc(T, original.len);
@@ -207,6 +211,7 @@ pub const VerifyState = struct {
                     _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = rule });
                     // std.debug.warn("\nverifying proof of {0}.\n", .{pStatement.label});
                     const resultExpression = try prove.runProof(pStatement.proof, rule.hypotheses, selfAsRuleMeaningMap, self.allocator);
+                    defer self.allocator.free(resultExpression);
                     if (!eqExpr(resultExpression, rule.conclusion)) return Error.ResultMismatch;
                 },
                 .D => {
@@ -241,7 +246,7 @@ pub const VerifyState = struct {
             //TODO: proper error handling! (not present; not rule; >0 hypotheses); TODO: test
             const hypExpression = self.meanings.get(feLabel.label).?.value.Rule.conclusion;
             hypotheses[i] = .{
-                .expression = try sliceCopy(CVToken, self.allocator, hypExpression),
+                .expression = try copyExpression(self.allocator, hypExpression),
                 .isF = (feLabel.fe == .F),
             };
         }
