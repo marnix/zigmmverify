@@ -63,9 +63,11 @@ const ProofStack = struct {
         // pop hypotheses
         var hypotheses = try self.allocator.alloc(Expression, nrHyp);
         defer self.allocator.free(hypotheses);
-        var j = nrHyp;
-        while (j > 0) : (j -= 1) {
-            hypotheses[nrHyp - j] = self.expressions.pop() orelse return Error.Incomplete; // TODO: test
+        {
+            var j: usize = nrHyp;
+            while (j > 0) : (j -= 1) {
+                hypotheses[j - 1] = self.expressions.pop() orelse return Error.Incomplete; // TODO: test
+            }
         }
 
         // build substitution based on $f
