@@ -511,9 +511,12 @@ const MHIterator = struct {
         // initially mandatory variables: those from the given expression
         var mandatoryVariables = TokenSet.init(allocator);
         defer mandatoryVariables.deinit();
-        for (expression) |cvToken| if (cvToken.cv == .V) {
-            _ = try mandatoryVariables.add(cvToken.token);
-        };
+        for (expression) |cvToken| {
+            if (state.meanings.get(cvToken.token)) |kv| switch (kv.value) {
+                .Variable => _ = try mandatoryVariables.add(cvToken.token),
+                else => {},
+            };
+        }
 
         var mhs = SinglyLinkedList(FELabel).init();
         var len: usize = 0;
@@ -541,9 +544,12 @@ const MHIterator = struct {
                     // the variables of the $e hypothesis are also mandatory
                     const eRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
                     const eExpression = eRule.conclusion;
-                    for (eExpression) |cvToken| if (cvToken.cv == .V) {
-                        _ = try mandatoryVariables.add(cvToken.token);
-                    };
+                    for (eExpression) |cvToken| {
+                        if (state.meanings.get(cvToken.token)) |kv| switch (kv.value) {
+                            .Variable => _ = try mandatoryVariables.add(cvToken.token),
+                            else => {},
+                        };
+                    }
                 },
             }
         }
