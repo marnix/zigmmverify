@@ -35,10 +35,10 @@ pub fn AsRuleMeaningMap(comptime T: type) type {
 const ProofStack = struct {
     const Self = @This();
     allocator: *Allocator,
-    expressions: std.SegmentedList(Expression, 0),
+    expressions: std.SegmentedList(Expression, 64),
 
     fn init(allocator: *Allocator) Self {
-        return ProofStack{ .allocator = allocator, .expressions = std.SegmentedList(Expression, 0).init(allocator) };
+        return ProofStack{ .allocator = allocator, .expressions = std.SegmentedList(Expression, 64).init(allocator) };
     }
     fn deinit(self: *Self) void {
         self.expressions.deinit();
@@ -98,7 +98,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
     var compressedNumber: usize = 0;
     var compressedLabels = TokenList.init(allocator);
     defer compressedLabels.deinit();
-    var markedExpressions = std.SegmentedList(Expression, 0).init(allocator);
+    var markedExpressions = std.SegmentedList(Expression, 32).init(allocator);
     defer markedExpressions.deinit();
 
     var it = @as(TokenList, proof).iterator(0);
@@ -175,7 +175,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
 
 /// caller becomes owner of allocated result
 fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Expression {
-    var resultAsList = SegmentedList(verify.CVToken, 0).init(allocator);
+    var resultAsList = SegmentedList(verify.CVToken, 128).init(allocator);
     defer resultAsList.deinit();
     for (orig) |cvToken| {
         if (subst.get(cvToken.token)) |kv| {
