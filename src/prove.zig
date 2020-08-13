@@ -73,18 +73,29 @@ const ProofStack = struct {
         // build substitution based on $f
         var substitution = Substitution.init(self.allocator);
         defer substitution.deinit();
-        var i: usize = 0;
-        while (i < nrHyp) : (i += 1) {
-            const hyp = rule.hypotheses[i];
-            if (hyp.isF) {
-                std.debug.assert(hyp.expression.len == 2);
-                _ = try substitution.put(hyp.expression[1].token, hypotheses[i][1..]); // TODO: check hypotheses[i] not empty slice
+        {
+            var i: usize = 0;
+            while (i < nrHyp) : (i += 1) {
+                const hyp = rule.hypotheses[i];
+                if (hyp.isF) {
+                    std.debug.assert(hyp.expression.len == 2);
+                    _ = try substitution.put(hyp.expression[1].token, hypotheses[i][1..]); // TODO: check hypotheses[i] not empty slice
+                }
             }
         }
 
-        // TODO:check substitution for $e
+        // check substitution for $e
+        {
+            var i: usize = 0;
+            while (i < nrHyp) : (i += 1) {
+                const hyp = rule.hypotheses[i];
+                if (!hyp.isF) {
+                    if (!eqExpr(hypotheses[i], try substitute(hyp.expression, substitution, self.allocator))) return Error.HypothesisMismatch;
+                }
+            }
+        }
 
-        try self.pushExpression(try substitute(rule.conclusion, substitution, self.allocator)); // TODO: use substituted conclusion instead
+        try self.pushExpression(try substitute(rule.conclusion, substitution, self.allocator));
     }
 };
 
