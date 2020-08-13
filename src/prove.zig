@@ -25,7 +25,7 @@ pub fn AsRuleMeaningMap(comptime T: type) type {
     return struct {
         const Self = @This();
         child: T,
-        getter: fn (T, Token) anyerror!InferenceRule, // TODO: Change to Error!InferenceRule ?
+        getter: fn (T, Token) Error!InferenceRule,
         /// This is just an abbreviation, to make the caller better readable.
         fn get(self: Self, token: Token) anyerror!InferenceRule {
             return (self.getter)(self.child, token);
@@ -94,7 +94,9 @@ const ProofStack = struct {
                 const hyp = rule.hypotheses[i];
                 if (hyp.isF) {
                     std.debug.assert(hyp.expression.len == 2);
-                    _ = try substitution.put(hyp.expression[1].token, hypotheses[i][1..]); // TODO: check hypotheses[i] not empty slice
+                    if (hypotheses[i].len == 0) return Error.HypothesisMismatch; // TODO: test
+                    if (!eq(hyp.expression[0].token, hypotheses[i][0].token)) return Error.HypothesisMismatch; // TODO: test
+                    _ = try substitution.put(hyp.expression[1].token, hypotheses[i][1..]);
                 }
             }
         }
