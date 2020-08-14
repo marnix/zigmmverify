@@ -25,7 +25,7 @@ pub fn AsRuleMeaningMap(comptime T: type) type {
     return struct {
         const Self = @This();
         child: T,
-        getter: fn (T, Token) anyerror!InferenceRule, // TODO: Change to Error!InferenceRule ?
+        getter: fn (T, Token) Error!InferenceRule,
         /// This is just an abbreviation, to make the caller better readable.
         fn get(self: Self, token: Token) anyerror!InferenceRule {
             return (self.getter)(self.child, token);
@@ -66,11 +66,8 @@ const ProofStack = struct {
         return self.expressions.at(self.expressions.len - 1).*;
     }
 
-    fn pushExpression(self: *Self, expression: Expression, ownedByProofStack: bool) !void {
+    fn pushExpression(self: *Self, expression: Expression) !void {
         try self.expressions.push(expression);
-        if (ownedByProofStack) {
-            try self.ownedExpressions.push(expression);
-        }
     }
     fn pushInferenceRule(self: *Self, rule: InferenceRule) !void {
         const nrHyp = rule.hypotheses.len;
@@ -94,7 +91,9 @@ const ProofStack = struct {
                 const hyp = rule.hypotheses[i];
                 if (hyp.isF) {
                     std.debug.assert(hyp.expression.len == 2);
-                    _ = try substitution.put(hyp.expression[1].token, hypotheses[i][1..]); // TODO: check hypotheses[i] not empty slice
+                    if (hypotheses[i].len == 0) return Error.HypothesisMismatch; // TODO: test
+                    if (!eq(hyp.expression[0], hypotheses[i][0])) return Error.HypothesisMismatch; // TODO: test
+                    _ = try substitution.put(hyp.expression[1], hypotheses[i][1..]);
                 }
             }
         }
@@ -107,12 +106,14 @@ const ProofStack = struct {
                 if (!hyp.isF) {
                     const substitutedHyp = try substitute(hyp.expression, substitution, self.allocator);
                     defer self.allocator.free(substitutedHyp);
-                    if (!eqExpr(hypotheses[i], substitutedHyp)) return Error.HypothesisMismatch;
+                    if (!eqExpr(substitutedHyp, hypotheses[i])) return Error.HypothesisMismatch;
                 }
             }
         }
 
-        try self.pushExpression(try substitute(rule.conclusion, substitution, self.allocator), true);
+        const expression = try substitute(rule.conclusion, substitution, self.allocator);
+        try self.ownedExpressions.push(expression);
+        try self.pushExpression(expression);
     }
 };
 
@@ -167,7 +168,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                                 i -= 1;
                                 // hypotheses...
                                 if (i < hypotheses.len) {
-                                    break :brk try proofStack.pushExpression(hypotheses[i].expression, false);
+                                    break :brk try proofStack.pushExpression(hypotheses[i].expression);
                                 }
                                 i -= hypotheses.len;
                                 // ...labels between parentheses...
@@ -177,7 +178,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                                 i -= compressedLabels.len;
                                 // ...expressions marked with 'Z'
                                 if (i < markedExpressions.len) {
-                                    break :brk try proofStack.pushExpression(markedExpressions.at(i).*, false);
+                                    break :brk try proofStack.pushExpression(markedExpressions.at(i).*);
                                 }
                                 return Error.NumberTooLarge; // TODO: test
                             }
@@ -204,23 +205,22 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
 
 /// caller becomes owner of allocated result
 fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Expression {
-    var resultAsList = SegmentedList(verify.CVToken, 128).init(allocator);
+    var resultAsList = SegmentedList(Token, 128).init(allocator);
     defer resultAsList.deinit();
-    for (orig) |cvToken| {
-        if (subst.get(cvToken.token)) |repl| {
-            // TODO: check cvToken.cv == .V
-            for (repl) |replCVToken| {
-                try resultAsList.push(replCVToken);
+    for (orig) |token| {
+        if (subst.get(token)) |repl| {
+            for (repl) |replToken| {
+                try resultAsList.push(replToken);
             }
         } else {
-            try resultAsList.push(cvToken);
+            try resultAsList.push(token);
         }
     }
 
-    var result = try allocator.alloc(verify.CVToken, resultAsList.len);
+    var result = try allocator.alloc(Token, resultAsList.len);
     var it = resultAsList.iterator(0);
     var i: usize = 0;
-    while (it.next()) |pCVToken| : (i += 1) result[i] = pCVToken.*;
+    while (it.next()) |pToken| : (i += 1) result[i] = pToken.*;
     return result;
 }
 
@@ -229,30 +229,24 @@ fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Exp
 const expect = std.testing.expect;
 
 test "simple substitution" {
-    const original = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const original = &[_]Token{ "class", "x" };
     var substitution = Substitution.init(std.testing.allocator);
     defer substitution.deinit();
-    _ = try substitution.put("x", &[_]verify.CVToken{.{ .token = "y", .cv = .V }});
-    const expected = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "y", .cv = .V } };
+    _ = try substitution.put("x", &[_]Token{"y"});
+    const expected = &[_]Token{ "class", "y" };
     const actual = try substitute(original, substitution, std.testing.allocator);
     defer std.testing.allocator.free(actual);
     expect(eqExpr(actual, expected));
 }
 
 test "compare equal expressions" {
-    const a = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
-    const b = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const a = &[_]Token{ "class", "x" };
+    const b = &[_]Token{ "class", "x" };
     expect(eqExpr(a, b));
 }
 
 test "compare unequal expressions" {
-    const a = &[_]verify.CVToken{ .{ .token = "a", .cv = .C }, .{ .token = "x", .cv = .V } };
-    const b = &[_]verify.CVToken{ .{ .token = "b", .cv = .C }, .{ .token = "x", .cv = .V } };
-    expect(!eqExpr(a, b));
-}
-
-test "compare unequal expressions, constant vs variable" {
-    const a = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
-    const b = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .C } };
+    const a = &[_]Token{ "a", "x" };
+    const b = &[_]Token{ "b", "x" };
     expect(!eqExpr(a, b));
 }
