@@ -19,7 +19,3 @@ pub fn main() !void {
         return err;
     };
 }
-
-test "run main" {
-    try main();
-}
