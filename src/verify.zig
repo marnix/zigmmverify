@@ -29,6 +29,8 @@ fn sliceCopy(comptime T: type, allocator: *Allocator, original: []const T) ![]co
 const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
 const FELabelList = std.SegmentedList(FELabel, 0);
+const DVPair = struct { var1: Token, var2: Token };
+const DVPairList = std.SegmentedList(DVPair, 0);
 
 pub const Expression = []const Token;
 
@@ -112,6 +114,8 @@ pub const VerifyState = struct {
     meanings: TokenMap(Meaning),
     /// the active hypotheses, and whether they are $f or $e
     activeHypotheses: FELabelList,
+    /// the active distinct variable pairs
+    activeDVPairs: DVPairList,
     /// the difference between the current nested scope
     /// and its immediately surrounding scope
     currentScopeDiff: ?*ScopeDiff,
@@ -121,6 +125,7 @@ pub const VerifyState = struct {
             .allocator = allocator,
             .meanings = TokenMap(Meaning).init(allocator),
             .activeHypotheses = FELabelList.init(allocator),
+            .activeDVPairs = DVPairList.init(allocator),
             .currentScopeDiff = null,
         };
     }
@@ -129,6 +134,7 @@ pub const VerifyState = struct {
         while (self.currentScopeDiff) |scopeDiff| {
             scopeDiff.pop();
         }
+        self.activeDVPairs.deinit();
         self.activeHypotheses.deinit();
         var it = self.meanings.iterator();
         while (it.next()) |kv| {
@@ -206,8 +212,23 @@ pub const VerifyState = struct {
                     defer self.allocator.free(resultExpression);
                     if (!eqExpr(resultExpression, rule.conclusion)) return Error.ResultMismatch;
                 },
-                .D => {
-                    // TODO: implement $d handling
+                .D => |dStatement| {
+                    var it1 = @as(TokenList, dStatement.variables).iterator(0);
+                    var i: usize = 0;
+                    while (it1.next()) |pVar1| : (i += 1) {
+                        if (self.meanings.get(pVar1.*)) |kv| {
+                            if (kv.value != .Variable) return Error.UnexpectedToken; // TODO: test
+                        } else return Error.UnexpectedToken; //TODO: test
+                        // ...
+                        var it2 = @as(TokenList, dStatement.variables).iterator(i + 1);
+                        while (it2.next()) |pVar2| {
+                            _ = try self.activeDVPairs.push(.{ .var1 = pVar1.*, .var2 = pVar2.* });
+                            if (self.currentScopeDiff) |scopeDiff| {
+                                scopeDiff.nrActiveDVPairs += 1;
+                            }
+                        }
+                        // ...
+                    }
                 },
                 .BlockOpen => {
                     try ScopeDiff.push(self);
@@ -287,6 +308,7 @@ const ScopeDiff = struct {
     activeTokens: TokenSet,
     variablesInFStatements: TokenSet,
     nrActiveHypotheses: usize,
+    nrActiveDVPairs: usize,
 
     fn push(state: *VerifyState) !void {
         const newScopeDiff = try state.allocator.create(ScopeDiff);
@@ -297,6 +319,7 @@ const ScopeDiff = struct {
             .activeTokens = TokenSet.init(state.allocator),
             .variablesInFStatements = TokenSet.init(state.allocator),
             .nrActiveHypotheses = 0,
+            .nrActiveDVPairs = 0,
         };
 
         state.currentScopeDiff = newScopeDiff;
@@ -304,6 +327,7 @@ const ScopeDiff = struct {
 
     fn pop(self: *Self) void {
         self.state.currentScopeDiff = self.optOuter;
+        self.deinitNrActiveDVPairs();
         self.deinitNrActiveHypotheses();
         self.deinitVariableInFStatements();
         self.deinitActiveTokens();
@@ -313,6 +337,12 @@ const ScopeDiff = struct {
     fn deinitNrActiveHypotheses(self: *Self) void {
         while (self.nrActiveHypotheses > 0) : (self.nrActiveHypotheses -= 1) {
             _ = self.state.activeHypotheses.pop();
+        }
+    }
+
+    fn deinitNrActiveDVPairs(self: *Self) void {
+        while (self.nrActiveDVPairs > 0) : (self.nrActiveDVPairs -= 1) {
+            _ = self.state.activeDVPairs.pop();
         }
     }
 
@@ -353,6 +383,14 @@ const expect = std.testing.expect;
 const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
+
+test "$d with constant" {
+    expectError(Error.UnexpectedToken, verify("$c class $. $d class $.", std.testing.allocator));
+}
+
+test "$d with undeclared token" {
+    expectError(Error.UnexpectedToken, verify("$d class $.", std.testing.allocator));
+}
 
 test "use undeclared variable" {
     expectError(Error.UnexpectedToken, verify("$c wff $. wph $f wff ph $.", std.testing.allocator));
