@@ -39,20 +39,6 @@ Build using zig 0.6.0, then just run the resulting binary.
   Also encapsulate some parts.
   Also try to avoid duplication in statement handling.
 
-- For each $p statement, run the proof.
-  For compressed proofs, don't decompress-then-run:
-  Decompression needs some context
-  (viz. the mandatory hypotheses for the $p statement,
-  and the number of hypotheses for each referenced statement),
-  and that context is more readily available while running the proof.
-
-  So execute the proof against the current state,
-  keeping a stack of `Expression`s.
-
-  (Initially ignore $d restrictions.)
-
-- Verify all proofs by executing and comparing for all statements.
-
 - Support $d.
 
 - Support $[ ... $] includes.  (Presumably in the tokenizer.)
