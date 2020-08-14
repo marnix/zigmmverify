@@ -66,11 +66,8 @@ const ProofStack = struct {
         return self.expressions.at(self.expressions.len - 1).*;
     }
 
-    fn pushExpression(self: *Self, expression: Expression, ownedByProofStack: bool) !void {
+    fn pushExpression(self: *Self, expression: Expression) !void {
         try self.expressions.push(expression);
-        if (ownedByProofStack) {
-            try self.ownedExpressions.push(expression);
-        }
     }
     fn pushInferenceRule(self: *Self, rule: InferenceRule) !void {
         const nrHyp = rule.hypotheses.len;
@@ -114,7 +111,9 @@ const ProofStack = struct {
             }
         }
 
-        try self.pushExpression(try substitute(rule.conclusion, substitution, self.allocator), true);
+        const expression = try substitute(rule.conclusion, substitution, self.allocator);
+        try self.ownedExpressions.push(expression);
+        try self.pushExpression(expression);
     }
 };
 
@@ -169,7 +168,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
                                 i -= 1;
                                 // hypotheses...
                                 if (i < hypotheses.len) {
-                                    break :brk try proofStack.pushExpression(hypotheses[i].expression, false);
+                                    break :brk try proofStack.pushExpression(hypotheses[i].expression);
                                 }
                                 i -= hypotheses.len;
                                 // ...labels between parentheses...
@@ -179,7 +178,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
                                 i -= compressedLabels.len;
                                 // ...expressions marked with 'Z'
                                 if (i < markedExpressions.len) {
-                                    break :brk try proofStack.pushExpression(markedExpressions.at(i).*, false);
+                                    break :brk try proofStack.pushExpression(markedExpressions.at(i).*);
                                 }
                                 return Error.NumberTooLarge; // TODO: test
                             }
