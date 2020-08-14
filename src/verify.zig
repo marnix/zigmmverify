@@ -384,6 +384,33 @@ const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
 
+test "count number of active $d pairs" {
+    var state = try VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+    var n: usize = 0;
+    try state.addStatementsFrom("$v a b c d e $.");
+
+    try state.addStatementsFrom("$d $.");
+    expect(state.activeDVPairs.len == n + 0);
+    n = state.activeDVPairs.len;
+
+    try state.addStatementsFrom("$d a $.");
+    expect(state.activeDVPairs.len == n + 0);
+    n = state.activeDVPairs.len;
+
+    try state.addStatementsFrom("$d a a $.");
+    expect(state.activeDVPairs.len == n + 1);
+    n = state.activeDVPairs.len;
+
+    try state.addStatementsFrom("$d a b $.");
+    expect(state.activeDVPairs.len == n + 1);
+    n = state.activeDVPairs.len;
+
+    try state.addStatementsFrom("$d a b c d e $.");
+    expect(state.activeDVPairs.len == n + 10);
+    n = state.activeDVPairs.len;
+}
+
 test "$d with constant" {
     expectError(Error.UnexpectedToken, verify("$c class $. $d class $.", std.testing.allocator));
 }
