@@ -513,7 +513,7 @@ const MHIterator = struct {
                     if (mandatoryVariables.contains(fVariable)) {
                         // include every $f for every mandatory variable
                         var node = try allocator.create(@TypeOf(mhs).Node);
-                        node.* = @TypeOf(mhs).Node.init(.{ .label = activeHypothesis.label, .fe = .F });
+                        node.* = @TypeOf(mhs).Node{ .data = .{ .label = activeHypothesis.label, .fe = .F } };
                         mhs.prepend(node);
                         len += 1;
                     }
@@ -521,7 +521,7 @@ const MHIterator = struct {
                 .E => {
                     // include every $e
                     var node = try allocator.create(@TypeOf(mhs).Node);
-                    node.* = @TypeOf(mhs).Node.init(.{ .label = activeHypothesis.label, .fe = .E });
+                    node.* = @TypeOf(mhs).Node{ .data = .{ .label = activeHypothesis.label, .fe = .E } };
                     mhs.prepend(node);
                     len += 1;
                     // the variables of the $e hypothesis are also mandatory
