@@ -1,7 +1,7 @@
 usingnamespace @import("globals.zig");
 
 pub const Error = error{
-// syntax errors
+    // syntax errors
     IllegalCharacter,
     Incomplete,
     UnexpectedToken,
