@@ -29,7 +29,7 @@ fn sliceCopy(comptime T: type, allocator: *Allocator, original: []const T) ![]co
 const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
 const FELabelList = std.SegmentedList(FELabel, 0);
-const DVPair = struct { var1: Token, var2: Token };
+pub const DVPair = struct { var1: Token, var2: Token };
 const DVPairList = std.SegmentedList(DVPair, 0);
 
 pub const Expression = []const Token;
@@ -74,6 +74,7 @@ pub const Hypothesis = struct {
 pub const InferenceRule = struct {
     const Self = @This();
 
+    dvPairs: []DVPair,
     hypotheses: []Hypothesis,
     conclusion: Expression,
 
@@ -81,6 +82,7 @@ pub const InferenceRule = struct {
         for (self.hypotheses) |*hyp| {
             hyp.deinit(allocator);
         }
+        allocator.free(self.dvPairs);
         allocator.free(self.hypotheses);
         allocator.free(self.conclusion);
     }
@@ -255,6 +257,13 @@ pub const VerifyState = struct {
         const conclusion = try self.expressionOf(tokens);
         var it = try self.mandatoryHypothesesOf(conclusion);
         defer it.deinit();
+
+        var dvPairs = try self.allocator.alloc(DVPair, it.dvCount());
+        var j: usize = 0;
+        while (it.dvNext()) |dvPair| : (j += 1) {
+            dvPairs[j] = dvPair;
+        }
+
         var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
         var i: usize = 0;
         while (it.next()) |feLabel| : (i += 1) {
@@ -264,7 +273,9 @@ pub const VerifyState = struct {
                 .isF = (feLabel.fe == .F),
             };
         }
+
         return InferenceRule{
+            .dvPairs = dvPairs,
             .hypotheses = hypotheses,
             .conclusion = conclusion,
         };
@@ -279,6 +290,7 @@ pub const VerifyState = struct {
     fn fromHypothesis(self: *Self, tokens: TokenList) !InferenceRule {
         const expression = try self.expressionOf(tokens);
         return InferenceRule{
+            .dvPairs = try self.allocator.alloc(DVPair, 0), // TODO: It seems we just can use &[_]DVPair{} ??
             .hypotheses = try self.allocator.alloc(Hypothesis, 0), // TODO: It seems we just can use &[_]Hypothesis{} ??
             .conclusion = expression,
         };
@@ -551,14 +563,16 @@ const MHIterator = struct {
 
     state: *VerifyState,
     allocator: *Allocator,
+    mandatoryVariables: TokenSet,
     mhs: SinglyLinkedList(FELabel),
     len: usize,
+    mdvPairs: DVPairList,
+    nextDVPair: usize = 0,
 
     /// expression remains owned by the caller
     fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) !MHIterator {
         // initially mandatory variables: those from the given expression
         var mandatoryVariables = TokenSet.init(allocator);
-        defer mandatoryVariables.deinit();
         for (expression) |token| {
             if (state.meanings.get(token)) |kv| switch (kv.value) {
                 .Variable => _ = try mandatoryVariables.add(token),
@@ -601,12 +615,21 @@ const MHIterator = struct {
             }
         }
 
-        return MHIterator{ .state = state, .allocator = allocator, .mhs = mhs, .len = len };
+        var mdvPairs = DVPairList.init(allocator);
+        var dvIt = state.activeDVPairs.iterator(0);
+        while (dvIt.next()) |dvPair| {
+            if (mandatoryVariables.contains(dvPair.var1) and mandatoryVariables.contains(dvPair.var2)) {
+                try mdvPairs.push(dvPair.*);
+            }
+        }
+
+        return MHIterator{ .state = state, .allocator = allocator, .mandatoryVariables = mandatoryVariables, .mhs = mhs, .len = len, .mdvPairs = mdvPairs };
     }
 
     fn deinit(self: *Self) void {
         // loop over all nodes so that all get freed
         while (self.next()) |_| {}
+        self.mandatoryVariables.deinit();
     }
 
     fn count(self: *Self) usize {
@@ -619,6 +642,19 @@ const MHIterator = struct {
             self.len -= 1;
             return node.data;
         } else return null;
+    }
+
+    fn dvCount(self: *Self) usize {
+        return self.mdvPairs.len;
+    }
+
+    fn dvNext(self: *Self) ?DVPair {
+        if (self.nextDVPair < self.mdvPairs.len) {
+            self.nextDVPair += 1;
+            return self.mdvPairs.at(self.nextDVPair - 1).*;
+        } else {
+            return null;
+        }
     }
 };
 

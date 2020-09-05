@@ -15,6 +15,7 @@ const verify = @import("verify.zig");
 const Expression = verify.Expression;
 const eqExpr = verify.eqExpr;
 const copyExpression = verify.copyExpression;
+const DVPair = verify.DVPair;
 const Hypothesis = verify.Hypothesis;
 const InferenceRule = verify.InferenceRule;
 const VerifyState = verify.VerifyState;
@@ -39,12 +40,14 @@ const ProofStack = struct {
     expressions: std.SegmentedList(Expression, 64),
     /// we collect these and clean them up at the very end
     ownedExpressions: std.SegmentedList(Expression, 64),
+    dvPairs: std.SegmentedList(DVPair, 16),
 
     fn init(allocator: *Allocator) Self {
         return ProofStack{
             .allocator = allocator,
             .expressions = std.SegmentedList(Expression, 64).init(allocator),
             .ownedExpressions = std.SegmentedList(Expression, 64).init(allocator),
+            .dvPairs = std.SegmentedList(DVPair, 16).init(allocator),
         };
     }
     fn deinit(self: *Self) void {
@@ -109,6 +112,15 @@ const ProofStack = struct {
                     if (!eqExpr(substitutedHyp, hypotheses[i])) return Error.HypothesisMismatch;
                 }
             }
+        }
+
+        for (rule.dvPairs) |dvPair| {
+            const expr1 = substitution.get(dvPair.var1).?.value;
+            const expr2 = substitution.get(dvPair.var2).?.value;
+            // TODO: HOW TO DETERMINE THE VARIABLES IN expr1 AND expr2 ?!?
+            // for every variable in expr1:
+            // :: for every variable in expr2:
+            // :: :: add var1,var2 to self.dvPairs
         }
 
         const expression = try substitute(rule.conclusion, substitution, self.allocator);
