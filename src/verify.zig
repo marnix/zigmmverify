@@ -140,13 +140,20 @@ pub const VerifyState = struct {
     fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
         const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
 
-        var n: u64 = 0;
-        defer std.debug.warn("\nFound {0} statements!\n", .{n});
+        var nr_statements: u64 = 0;
+        var nr_proofs: u64 = 0;
+        defer std.debug.warn("\nFound {0} statements, of which {1} are $p.\n", .{ nr_statements, nr_proofs });
+
+        var frameArena = std.heap.ArenaAllocator.init(self.allocator);
+        defer frameArena.deinit();
+        const frameAllocator = &frameArena.allocator;
+
+        var batch = std.event.Batch(anyerror!void, 1000, .auto_async).init();
 
         var statements = parse.StatementIterator.init(self.allocator, buffer);
         while (try statements.next()) |statement| {
             defer statement.deinit(self.allocator);
-            n += 1;
+            nr_statements += 1;
 
             switch (statement.*) {
                 .C => |cStatement| {
@@ -198,13 +205,16 @@ pub const VerifyState = struct {
                     _ = try self.meanings.put(aStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(aStatement.tokens) });
                 },
                 .P => |pStatement| {
+                    nr_proofs += 1;
                     if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
                     const rule = try self.inferenceRuleOf(pStatement.tokens);
                     _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = rule });
-                    // std.debug.warn("\nverifying proof of {0}.\n", .{pStatement.label});
-                    const resultExpression = try prove.runProof(pStatement.proof, rule.hypotheses, selfAsRuleMeaningMap, self.allocator);
-                    defer self.allocator.free(resultExpression);
-                    if (!eqExpr(resultExpression, rule.conclusion)) return Error.ResultMismatch;
+
+                    std.event.Loop.startCpuBoundOperation();
+
+                    const frame = try frameAllocator.create(@Frame(VerifyState.verifyProofConclusion));
+                    frame.* = async self.verifyProofConclusion(pStatement.label, pStatement.proof, rule.hypotheses, rule.conclusion);
+                    batch.add(frame);
                 },
                 .D => {
                     // TODO: implement $d handling
@@ -218,7 +228,18 @@ pub const VerifyState = struct {
                     } else return Error.UnexpectedToken;
                 },
             }
+
+            try batch.wait();
         }
+    }
+
+    fn verifyProofConclusion(self: *VerifyState, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: Expression) anyerror!void {
+        // std.debug.warn("\nstarting to verify proof of {0}.\n", .{label});
+        // defer std.debug.warn("\nend of verify proof of {0}.\n", .{label});
+        const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
+        const resultExpression = try prove.runProof(proof, hypotheses, selfAsRuleMeaningMap, self.allocator);
+        defer self.allocator.free(resultExpression);
+        if (!eqExpr(resultExpression, conclusion)) return Error.ResultMismatch;
     }
 
     /// caller does not get ownership
@@ -645,4 +666,15 @@ test "inference rule with $f and $e mandatory hypotheses" {
     expect(alltrueRule.hypotheses.len == 3);
     expect(eq(alltrueRule.hypotheses[1].expression[1], "ph"));
     expect(eq(alltrueRule.conclusion[0], "|-"));
+}
+
+test "multiple proofs" {
+    try verify(
+        \\$c T $.
+        \\${
+        \\  h $e T $.
+        \\  p $p T $= ( ) A $.
+        \\  q $p T $= ( ) A $.
+        \\$}
+    , std.testing.allocator);
 }
