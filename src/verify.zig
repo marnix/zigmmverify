@@ -140,13 +140,14 @@ pub const VerifyState = struct {
     fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
         const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
 
-        var n: u64 = 0;
-        defer std.debug.warn("\nFound {0} statements!\n", .{n});
+        var nr_statements: u64 = 0;
+        var nr_proofs: u64 = 0;
+        defer std.debug.warn("\nFound {0} statements, of which {1} are $p.\n", .{ nr_statements, nr_proofs });
 
         var statements = parse.StatementIterator.init(self.allocator, buffer);
         while (try statements.next()) |statement| {
             defer statement.deinit(self.allocator);
-            n += 1;
+            nr_statements += 1;
 
             switch (statement.*) {
                 .C => |cStatement| {
@@ -198,6 +199,7 @@ pub const VerifyState = struct {
                     _ = try self.meanings.put(aStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(aStatement.tokens) });
                 },
                 .P => |pStatement| {
+                    nr_proofs += 1;
                     if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
                     const rule = try self.inferenceRuleOf(pStatement.tokens);
                     _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = rule });
