@@ -81,10 +81,10 @@ pub const InferenceRule = struct {
 
     fn deinit(self: *Self, allocator: *Allocator) void {
         self.variables.deinit();
+        allocator.free(self.dvPairs);
         for (self.hypotheses) |*hyp| {
             hyp.deinit(allocator);
         }
-        allocator.free(self.dvPairs);
         allocator.free(self.hypotheses);
         allocator.free(self.conclusion);
     }
@@ -152,7 +152,7 @@ pub const VerifyState = struct {
 
         var nr_statements: u64 = 0;
         var nr_proofs: u64 = 0;
-        defer std.debug.warn("\nFound {0} statements, of which {1} are $p.\n", .{ nr_statements, nr_proofs });
+        defer std.debug.warn("\nFound {0} statements so far, of which {1} are $p.\n", .{ nr_statements, nr_proofs });
 
         var frameArena = std.heap.ArenaAllocator.init(self.allocator);
         defer frameArena.deinit();
