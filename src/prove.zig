@@ -17,16 +17,32 @@ const eqExpr = verify.eqExpr;
 const copyExpression = verify.copyExpression;
 const Hypothesis = verify.Hypothesis;
 const InferenceRule = verify.InferenceRule;
-const VerifyState = verify.VerifyState;
+
+// TODO: move to new utils.zig?
+fn assertCoercible(comptime T: type, comptime U: type) void {
+    var someT: T = undefined;
+    assert(@TypeOf(@as(U, someT)) == U);
+}
 
 const Substitution = TokenMap(Expression);
 
+/// A 'rule meaning map' is an instance of a struct with
+/// an fn called `get` that takes a Token and returns InferenceRule (or an error).
+fn assertIsRuleMeaningMap(map: var) void {
+    comptime const typeOfFnGet = @typeInfo(@TypeOf(map.get)).BoundFn;
+    assert(typeOfFnGet.args.len == 2);
+    assertCoercible(Token, typeOfFnGet.args[1].arg_type.?);
+    assertCoercible(typeOfFnGet.return_type.?, anyerror!InferenceRule);
+}
+
+/// A wrapper around a value of type `T` and a `getter: fn (T, Token) anyerror!InferenceRule`,
+/// which satisfies `assertIsRuleMeaningMap()`.
 pub fn AsRuleMeaningMap(comptime T: type) type {
     return struct {
         const Self = @This();
+
         child: T,
-        getter: fn (T, Token) Error!InferenceRule,
-        /// This is just an abbreviation, to make the caller better readable.
+        getter: fn (T, Token) anyerror!InferenceRule,
         fn get(self: Self, token: Token) anyerror!InferenceRule {
             return (self.getter)(self.child, token);
         }
@@ -119,7 +135,8 @@ const ProofStack = struct {
 
 /// caller becomes owner of allocated result
 pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var, allocator: *Allocator) !Expression {
-    // TODO: assert, in some way, that @TypeOf(ruleMeaningMap) is a type returned by AsRuleMeaningMap()
+    assertIsRuleMeaningMap(ruleMeaningMap);
+
     const Modes = enum { Initial, Uncompressed, CompressedPart1, CompressedPart2 };
     var mode = Modes.Initial;
 
