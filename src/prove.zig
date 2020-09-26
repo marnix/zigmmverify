@@ -17,7 +17,6 @@ const eqExpr = verify.eqExpr;
 const copyExpression = verify.copyExpression;
 const Hypothesis = verify.Hypothesis;
 const InferenceRule = verify.InferenceRule;
-const VerifyState = verify.VerifyState;
 
 const Substitution = TokenMap(Expression);
 
@@ -25,8 +24,7 @@ pub fn AsRuleMeaningMap(comptime T: type) type {
     return struct {
         const Self = @This();
         child: T,
-        getter: fn (T, Token) Error!InferenceRule,
-        /// This is just an abbreviation, to make the caller better readable.
+        getter: fn (T, Token) anyerror!InferenceRule,
         fn get(self: Self, token: Token) anyerror!InferenceRule {
             return (self.getter)(self.child, token);
         }
