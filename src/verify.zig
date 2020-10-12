@@ -82,13 +82,11 @@ pub const Hypothesis = struct {
 pub const InferenceRule = struct {
     const Self = @This();
 
-    variables: TokenSet,
     dvPairs: []DVPair,
     hypotheses: []Hypothesis,
     conclusion: Expression,
 
     fn deinit(self: *Self, allocator: *Allocator) void {
-        self.variables.deinit();
         allocator.free(self.dvPairs);
         for (self.hypotheses) |*hyp| {
             hyp.deinit(allocator);
@@ -306,7 +304,6 @@ pub const VerifyState = struct {
         }
 
         return InferenceRule{
-            .variables = it.mandatoryVariables,
             .dvPairs = dvPairs,
             .hypotheses = hypotheses,
             .conclusion = conclusion,
@@ -322,7 +319,6 @@ pub const VerifyState = struct {
     fn fromHypothesis(self: *Self, tokens: TokenList) !InferenceRule {
         const expression = try self.expressionOf(tokens);
         return InferenceRule{
-            .variables = TokenSet.init(self.allocator),
             .dvPairs = try self.allocator.alloc(DVPair, 0), // TODO: It seems we just can use &[_]DVPair{} ??
             .hypotheses = try self.allocator.alloc(Hypothesis, 0), // TODO: It seems we just can use &[_]Hypothesis{} ??
             .conclusion = expression,
@@ -666,6 +662,7 @@ const MHIterator = struct {
     fn deinit(self: *Self) void {
         // loop over all nodes so that all get freed
         while (self.next()) |_| {}
+        self.mandatoryVariables.deinit();
     }
 
     fn count(self: *Self) usize {
@@ -732,7 +729,6 @@ test "iterate over single $f hypothesis" {
     var expression = try expressionOf(&state, "|- ph");
     defer std.testing.allocator.free(expression);
     var it = try state.mandatoryHypothesesOf(expression);
-    defer it.mandatoryVariables.deinit();
     defer it.deinit();
     var item: ?FELabel = null;
     assert(it.count() == 1);
@@ -752,7 +748,6 @@ test "iterate with $e hypothesis" {
     var expression = try expressionOf(&state, "|- ph");
     defer std.testing.allocator.free(expression);
     var it = try state.mandatoryHypothesesOf(expression);
-    defer it.mandatoryVariables.deinit();
     defer it.deinit();
     var item: ?FELabel = null;
     assert(it.count() == 3);
