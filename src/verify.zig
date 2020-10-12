@@ -15,7 +15,7 @@ const prove = @import("prove.zig");
 const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
 pub fn copyExpression(allocator: *Allocator, original: Expression) !Expression {
-    return try sliceCopy(Token, allocator, original);
+    return try sliceCopy(CVToken, allocator, original);
 }
 
 // TODO: move to new utils.zig?
@@ -32,13 +32,14 @@ const FELabelList = std.SegmentedList(FELabel, 0);
 pub const DVPair = struct { var1: Token, var2: Token };
 const DVPairList = std.SegmentedList(DVPair, 0);
 
-pub const Expression = []const Token;
+pub const CVToken = struct { token: Token, cv: enum { C, V } };
+pub const Expression = []const CVToken;
 
 pub fn eqExpr(a: Expression, b: Expression) bool {
     const result = brk: {
         if (a.len != b.len) break :brk false;
         for (a) |ai, i| {
-            if (!eq(ai, b[i])) break :brk false;
+            if (!(eq(ai.token, b[i].token) and ai.cv == b[i].cv)) break :brk false;
         }
         break :brk true;
     };
@@ -54,8 +55,15 @@ pub fn eqExpr(a: Expression, b: Expression) bool {
 
 fn warnExpr(expr: Expression) void {
     var sep: []const u8 = "";
-    for (expr) |token| {
-        std.debug.warn("{1}{0}", .{ token, sep });
+    for (expr) |cvToken| {
+        switch (cvToken.cv) {
+            .C => {
+                std.debug.warn("{1}{0}", .{ cvToken.token, sep });
+            },
+            .V => {
+                std.debug.warn("{1}${0}", .{ cvToken.token, sep });
+            },
+        }
         sep = " ";
     }
 }
@@ -323,13 +331,20 @@ pub const VerifyState = struct {
 
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
     fn expressionOf(self: *Self, tokens: TokenList) !Expression {
-        var result = try self.allocator.alloc(Token, tokens.count());
+        var result = try self.allocator.alloc(CVToken, tokens.count());
         errdefer self.allocator.free(result);
         var i: usize = 0;
         var it = @as(TokenList, tokens).iterator(0);
         while (it.next()) |pToken| : (i += 1) {
             const kv = self.meanings.get(pToken.*) orelse return Error.UnexpectedToken;
-            result[i] = pToken.*;
+            result[i] = .{
+                .token = pToken.*,
+                .cv = switch (kv.value) {
+                    .Constant => .C,
+                    .Variable => .V,
+                    else => return Error.UnexpectedToken,
+                },
+            };
         }
         return result;
     }
@@ -487,8 +502,10 @@ test "tokenlist to expression" {
     defer std.testing.allocator.free(expression);
 
     expect(expression.len == 2);
-    expect(eq(expression[0], "wff"));
-    expect(eq(expression[1], "ph"));
+    expect(eq(expression[0].token, "wff"));
+    expect(expression[0].cv == .C);
+    expect(eq(expression[1].token, "ph"));
+    expect(expression[1].cv == .V);
 }
 
 test "no duplicate variable declarations" {
@@ -514,13 +531,13 @@ test "$v in nested scope, used in $a (use-after-free reproduction)" {
     try state.addStatementsFrom("$c class setvar $. ${ $v x $. vx.cv $f setvar x $. cv $a class x $.");
     const cv: InferenceRule = state.meanings.get("cv").?.value.Rule;
     const vx_cv: Hypothesis = cv.hypotheses[0];
-    const x: Token = vx_cv.expression[1];
+    const x: Token = vx_cv.expression[1].token;
     expect(eq(x, "x"));
 
     try state.addStatementsFrom("$}");
     const cv2: InferenceRule = state.meanings.get("cv").?.value.Rule;
     const vx_cv2: Hypothesis = cv.hypotheses[0];
-    const x2: Token = vx_cv.expression[1];
+    const x2: Token = vx_cv.expression[1].token;
     expect(eq(x2, "x"));
 }
 
@@ -598,12 +615,9 @@ const MHIterator = struct {
     fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) !MHIterator {
         // initially mandatory variables: those from the given expression
         var mandatoryVariables = TokenSet.init(allocator);
-        for (expression) |token| {
-            if (state.meanings.get(token)) |kv| switch (kv.value) {
-                .Variable => _ = try mandatoryVariables.add(token),
-                else => {},
-            };
-        }
+        for (expression) |cvToken| if (cvToken.cv == .V) {
+            _ = try mandatoryVariables.add(cvToken.token);
+        };
 
         var mhs = SinglyLinkedList(FELabel).init();
         var len: usize = 0;
@@ -614,7 +628,8 @@ const MHIterator = struct {
                 .F => {
                     const fRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
                     assert(fRule.conclusion.len == 2);
-                    const fVariable = fRule.conclusion[1];
+                    assert(fRule.conclusion[1].cv == .V);
+                    const fVariable = fRule.conclusion[1].token;
                     if (mandatoryVariables.contains(fVariable)) {
                         // include every $f for every mandatory variable
                         var node = try mhs.createNode(.{ .label = activeHypothesis.label, .fe = .F }, allocator);
@@ -630,12 +645,9 @@ const MHIterator = struct {
                     // the variables of the $e hypothesis are also mandatory
                     const eRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
                     const eExpression = eRule.conclusion;
-                    for (eExpression) |token| {
-                        if (state.meanings.get(token)) |kv| switch (kv.value) {
-                            .Variable => _ = try mandatoryVariables.add(token),
-                            else => {},
-                        };
-                    }
+                    for (eExpression) |cvToken| if (cvToken.cv == .V) {
+                        _ = try mandatoryVariables.add(cvToken.token);
+                    };
                 },
             }
         }
@@ -770,8 +782,8 @@ test "inference rule with $f and $e mandatory hypotheses" {
 
     const alltrueRule = state.meanings.get("alltrue").?.value.Rule;
     expect(alltrueRule.hypotheses.len == 3);
-    expect(eq(alltrueRule.hypotheses[1].expression[1], "ph"));
-    expect(eq(alltrueRule.conclusion[0], "|-"));
+    expect(eq(alltrueRule.hypotheses[1].expression[1].token, "ph"));
+    expect(eq(alltrueRule.conclusion[0].token, "|-"));
 }
 
 test "multiple proofs" {
