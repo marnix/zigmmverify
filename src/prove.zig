@@ -55,24 +55,20 @@ const ProofStack = struct {
     allocator: *Allocator,
     expressions: std.SegmentedList(Expression, 64),
     /// we collect these and clean them up at the very end
-    ownedExpressions: std.SegmentedList(Expression, 64),
+    arena: std.heap.ArenaAllocator,
     dvPairs: std.SegmentedList(DVPair, 16),
 
     fn init(allocator: *Allocator) Self {
         return ProofStack{
             .allocator = allocator,
             .expressions = std.SegmentedList(Expression, 64).init(allocator),
-            .ownedExpressions = std.SegmentedList(Expression, 64).init(allocator),
+            .arena = std.heap.ArenaAllocator.init(allocator),
             .dvPairs = std.SegmentedList(DVPair, 16).init(allocator),
         };
     }
     fn deinit(self: *Self) void {
         self.expressions.deinit();
-        var it = self.ownedExpressions.iterator(0);
-        while (it.next()) |pOwnedExpression| {
-            self.allocator.free(pOwnedExpression.*);
-        }
-        self.ownedExpressions.deinit();
+        self.arena.deinit();
         self.dvPairs.deinit();
     }
 
@@ -140,8 +136,7 @@ const ProofStack = struct {
             // :: :: add var1,var2 to self.dvPairs
         }
 
-        const expression = try substitute(rule.conclusion, substitution, self.allocator);
-        try self.ownedExpressions.push(expression);
+        const expression = try substitute(rule.conclusion, substitution, &self.arena.allocator);
         try self.pushExpression(expression);
     }
 };
