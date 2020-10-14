@@ -73,6 +73,7 @@ const ProofStack = struct {
             self.allocator.free(pOwnedExpression.*);
         }
         self.ownedExpressions.deinit();
+        self.dvPairs.deinit();
     }
 
     fn isEmpty(self: *Self) bool {

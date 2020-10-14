@@ -432,6 +432,16 @@ const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
 
+test "active DVR (found a memory leak)" {
+    try verify(
+        \\$c wff $.
+        \\$v P Q $.
+        \\wp $f wff P $.
+        \\wq $f wff Q $.
+        \\$d P Q $. pq.1 $e wff P $. pq $a wff Q $.
+    , std.testing.allocator);
+}
+
 test "count number of active $d pairs" {
     var state = try VerifyState.init(std.testing.allocator);
     defer state.deinit();
@@ -663,6 +673,7 @@ const MHIterator = struct {
         // loop over all nodes so that all get freed
         while (self.next()) |_| {}
         self.mandatoryVariables.deinit();
+        self.mdvPairs.deinit();
     }
 
     fn count(self: *Self) usize {
