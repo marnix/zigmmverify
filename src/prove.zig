@@ -184,6 +184,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
                         // handle every character of t.*, building numbers
                         if ('U' <= c and c <= 'Y') {
                             compressedNumber = compressedNumber * 5 + (c - 'U' + 1);
+                            // number is still incomplete
                         } else if ('A' <= c and c <= 'T') {
                             compressedNumber = compressedNumber * 20 + (c - 'A' + 1);
                             // we have a complete number now
@@ -201,10 +202,11 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
                                     break :brk try proofStack.pushInferenceRule(try ruleMeaningMap.get(compressedLabels.at(i).*));
                                 }
                                 i -= compressedLabels.len;
-                                // ...expressions marked with 'Z'
+                                // ...expressions marked with 'Z'...
                                 if (i < markedExpressions.len) {
                                     break :brk try proofStack.pushExpression(markedExpressions.at(i).*);
                                 }
+                                // ...or larger than expected.
                                 return Error.NumberTooLarge; // TODO: test
                             }
                             compressedNumber = 0;

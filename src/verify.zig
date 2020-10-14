@@ -242,6 +242,7 @@ pub const VerifyState = struct {
                         // ...
                         var it2 = @as(TokenList, dStatement.variables).iterator(i + 1);
                         while (it2.next()) |pVar2| {
+                            // TODO: error if var1 == var2
                             _ = try self.activeDVPairs.push(.{ .var1 = pVar1.*, .var2 = pVar2.* });
                             if (self.currentScopeDiff) |scopeDiff| {
                                 scopeDiff.nrActiveDVPairs += 1;
