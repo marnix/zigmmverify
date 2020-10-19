@@ -141,8 +141,10 @@ const ProofStack = struct {
     }
 };
 
+const RunProofResult = struct { expression: Expression };
+
 /// caller becomes owner of allocated result
-pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var, allocator: *Allocator) !Expression {
+pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var, allocator: *Allocator) !RunProofResult {
     assertIsRuleMeaningMap(ruleMeaningMap);
 
     const Modes = enum { Initial, Uncompressed, CompressedPart1, CompressedPart2 };
@@ -228,7 +230,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
     if (proofStack.isEmpty()) return Error.Incomplete; // TODO: test
     if (!proofStack.isSingle()) return Error.UnexpectedToken; // TODO: test; better error code?
 
-    return try copyExpression(allocator, proofStack.top());
+    return RunProofResult{ .expression = try copyExpression(allocator, proofStack.top()) };
 }
 
 /// caller becomes owner of allocated result
