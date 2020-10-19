@@ -269,9 +269,9 @@ pub const VerifyState = struct {
         // std.debug.warn("\nstarting to verify proof of {0}.\n", .{label});
         // defer std.debug.warn("\nend of verify proof of {0}.\n", .{label});
         const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
-        const result = try prove.runProof(proof, hypotheses, selfAsRuleMeaningMap, self.allocator);
-        defer self.allocator.free(result.expression);
-        if (!eqExpr(result.expression, conclusion)) return Error.ResultMismatch;
+        var result = try prove.runProof(proof, hypotheses, selfAsRuleMeaningMap, self.allocator);
+        defer result.deinit(self.allocator);
+        if (!eqExpr(result.expression, conclusion.expression)) return Error.ResultMismatch;
     }
 
     /// caller does not get ownership

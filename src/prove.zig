@@ -69,7 +69,7 @@ const ProofStack = struct {
     fn deinit(self: *Self) void {
         self.expressions.deinit();
         self.arena.deinit();
-        self.dvPairs.deinit();
+        // no self.dvPairs.deinit(), because client keeps ownership
     }
 
     fn isEmpty(self: *Self) bool {
@@ -141,7 +141,15 @@ const ProofStack = struct {
     }
 };
 
-const RunProofResult = struct { expression: Expression };
+pub const RunProofResult = struct {
+    expression: Expression,
+    dvPairs: std.SegmentedList(DVPair, 16),
+
+    fn deinit(self: *@This(), allocator: *Allocator) void {
+        allocator.free(self.expression);
+        self.dvPairs.deinit();
+    }
+};
 
 /// caller becomes owner of allocated result
 pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var, allocator: *Allocator) !RunProofResult {
@@ -230,7 +238,10 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
     if (proofStack.isEmpty()) return Error.Incomplete; // TODO: test
     if (!proofStack.isSingle()) return Error.UnexpectedToken; // TODO: test; better error code?
 
-    return RunProofResult{ .expression = try copyExpression(allocator, proofStack.top()) };
+    return RunProofResult{
+        .expression = try copyExpression(allocator, proofStack.top()),
+        .dvPairs = proofStack.dvPairs,
+    };
 }
 
 /// caller becomes owner of allocated result
