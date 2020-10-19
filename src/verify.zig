@@ -433,6 +433,23 @@ const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
 
+test "proof with correct $d" {
+    // FOR DEBUGGING: const allocator = &std.heap.loggingAllocator(std.testing.allocator, std.io.getStdErr().outStream()).allocator;
+    try verify(
+        \\$c wff |- $.
+        \\$v P Q R $.
+        \\wp $f wff P $.
+        \\wq $f wff Q $.
+        \\wr $f wff R $.
+        \\${ $d P Q $. pq.1 $e |- P $. pq $a |- Q $. $}
+        \\
+        \\${
+        \\  $d Q R $.
+        \\  qr.1 $e |- Q $. qr $p |- R $= wq wr qr.1 pq $.
+        \\$}
+    , std.testing.allocator);
+}
+
 test "active DVR (found a memory leak)" {
     try verify(
         \\$c wff $.

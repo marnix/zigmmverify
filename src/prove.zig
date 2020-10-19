@@ -220,6 +220,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: var,
                 },
             }
             if (!reprocessCurrentToken) break;
+            reprocessCurrentToken = false;
         }
     }
     if (mode == .CompressedPart1) return Error.Incomplete; // TODO: test
