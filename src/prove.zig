@@ -127,13 +127,18 @@ const ProofStack = struct {
             }
         }
 
-        for (rule.dvPairs) |dvPair| {
-            const expr1 = substitution.get(dvPair.var1).?.value;
-            const expr2 = substitution.get(dvPair.var2).?.value;
-            // TODO: HOW TO DETERMINE THE VARIABLES IN expr1 AND expr2 ?!?
-            // for every variable in expr1:
-            // :: for every variable in expr2:
-            // :: :: add var1,var2 to self.dvPairs
+        // add distinct variable restrictions imposed by this inference rule
+        for (rule.activeDVPairs) |dvPair| {
+            // get the 'distinct expressions', skipping any optional DVRs
+            const expr1 = if (substitution.get(dvPair.var1)) |e| e.value else continue;
+            const expr2 = if (substitution.get(dvPair.var2)) |e| e.value else continue;
+            // create DVRs for every pair of variables in the two expressions
+            for (expr1) |cvToken1| if (cvToken1.cv == .V) {
+                for (expr2) |cvToken2| if (cvToken2.cv == .V) {
+                    // note: don't try to check for duplicates, that is probably not worth it
+                    try self.dvPairs.push(.{ .var1 = cvToken1.token, .var2 = cvToken2.token });
+                };
+            };
         }
 
         const expression = try substitute(rule.conclusion, substitution, &self.arena.allocator);

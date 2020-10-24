@@ -229,7 +229,10 @@ pub const VerifyState = struct {
                     std.event.Loop.startCpuBoundOperation();
 
                     const frame = try frameAllocator.create(@Frame(VerifyState.verifyProofConclusion));
-                    frame.* = async self.verifyProofConclusion(pStatement.label, pStatement.proof, rule.hypotheses, rule.conclusion);
+                    frame.* = async self.verifyProofConclusion(pStatement.label, pStatement.proof, rule.hypotheses, .{
+                        .expression = rule.conclusion,
+                        .dvPairs = rule.activeDVPairs,
+                    });
                     batch.add(frame);
                 },
                 .D => |dStatement| {
@@ -265,13 +268,38 @@ pub const VerifyState = struct {
         }
     }
 
-    fn verifyProofConclusion(self: *VerifyState, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: Expression) anyerror!void {
+    fn verifyProofConclusion(self: *VerifyState, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: struct {
+        expression: Expression,
+        dvPairs: []DVPair,
+    }) anyerror!void {
         // std.debug.warn("\nstarting to verify proof of {0}.\n", .{label});
-        // defer std.debug.warn("\nend of verify proof of {0}.\n", .{label});
+        // defer std.debug.warn("end of verify proof of {0}.\n", .{label});
         const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
         var result = try prove.runProof(proof, hypotheses, selfAsRuleMeaningMap, self.allocator);
         defer result.deinit(self.allocator);
+
         if (!eqExpr(result.expression, conclusion.expression)) return Error.ResultMismatch;
+
+        // if not(every result.dvPairs is in conclusion.dvPairs) return Error.DVRMissing;
+        var it = result.dvPairs.iterator(0);
+        while (it.next()) |proofDVPair| {
+            for (conclusion.dvPairs) |ruleDVPair| {
+                if ((eq(proofDVPair.var1, ruleDVPair.var1) and eq(proofDVPair.var2, ruleDVPair.var2)) or
+                    (eq(proofDVPair.var1, ruleDVPair.var2) and eq(proofDVPair.var2, ruleDVPair.var1)))
+                {
+                    // proofDVPair is declared in an active $d statement
+                    break;
+                }
+            } else {
+                // proofDVPair is not declared in any active $d statement
+                std.debug.warn("$d {0} {1} $. expected but not found in the following list:\n", .{ proofDVPair.var1, proofDVPair.var2 });
+                for (conclusion.dvPairs) |ruleDVPair| {
+                    std.debug.warn("   $d {0} {1} $.\n", .{ ruleDVPair.var1, ruleDVPair.var2 });
+                }
+                std.debug.warn("(end of list)\n", .{});
+                return Error.DVRMissing; // TODO: Test
+            }
+        }
     }
 
     /// caller does not get ownership
@@ -433,6 +461,21 @@ const expect = std.testing.expect;
 const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
+
+test "proof with $d violation" {
+    expectError(Error.DVRMissing, verify(
+        \\$c wff |- $.
+        \\$v P Q R $.
+        \\wp $f wff P $.
+        \\wq $f wff Q $.
+        \\wr $f wff R $.
+        \\${ $d P Q $. pq.1 $e |- P $. pq $a |- Q $. $}
+        \\
+        \\${
+        \\  qr.1 $e |- Q $. qr $p |- R $= wq wr qr.1 pq $.
+        \\$}
+    , std.testing.allocator));
+}
 
 test "proof with correct $d" {
     // FOR DEBUGGING: const allocator = &std.heap.loggingAllocator(std.testing.allocator, std.io.getStdErr().outStream()).allocator;
