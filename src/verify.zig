@@ -82,12 +82,12 @@ pub const Hypothesis = struct {
 pub const InferenceRule = struct {
     const Self = @This();
 
-    dvPairs: []DVPair,
+    activeDVPairs: []DVPair,
     hypotheses: []Hypothesis,
     conclusion: Expression,
 
     fn deinit(self: *Self, allocator: *Allocator) void {
-        allocator.free(self.dvPairs);
+        allocator.free(self.activeDVPairs);
         for (self.hypotheses) |*hyp| {
             hyp.deinit(allocator);
         }
@@ -288,10 +288,11 @@ pub const VerifyState = struct {
         var it = try self.mandatoryHypothesesOf(conclusion);
         defer it.deinit();
 
-        var dvPairs = try self.allocator.alloc(DVPair, it.dvCount());
+        var dvPairs = try self.allocator.alloc(DVPair, self.activeDVPairs.len);
         var j: usize = 0;
-        while (it.dvNext()) |dvPair| : (j += 1) {
-            dvPairs[j] = dvPair;
+        var it2 = self.activeDVPairs.iterator(0);
+        while (it2.next()) |dvPair| : (j += 1) {
+            dvPairs[j] = dvPair.*;
         }
 
         var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
@@ -305,7 +306,7 @@ pub const VerifyState = struct {
         }
 
         return InferenceRule{
-            .dvPairs = dvPairs,
+            .activeDVPairs = dvPairs,
             .hypotheses = hypotheses,
             .conclusion = conclusion,
         };
@@ -320,7 +321,7 @@ pub const VerifyState = struct {
     fn fromHypothesis(self: *Self, tokens: TokenList) !InferenceRule {
         const expression = try self.expressionOf(tokens);
         return InferenceRule{
-            .dvPairs = try self.allocator.alloc(DVPair, 0), // TODO: It seems we just can use &[_]DVPair{} ??
+            .activeDVPairs = try self.allocator.alloc(DVPair, 0), // TODO: It seems we just can use &[_]DVPair{} ??
             .hypotheses = try self.allocator.alloc(Hypothesis, 0), // TODO: It seems we just can use &[_]Hypothesis{} ??
             .conclusion = expression,
         };
@@ -632,7 +633,6 @@ const MHIterator = struct {
     mandatoryVariables: TokenSet,
     mhs: SinglyLinkedList(FELabel),
     len: usize,
-    mdvPairs: DVPairList,
     nextDVPair: usize = 0,
 
     /// expression remains owned by the caller
@@ -676,22 +676,13 @@ const MHIterator = struct {
             }
         }
 
-        var mdvPairs = DVPairList.init(allocator);
-        var dvIt = state.activeDVPairs.iterator(0);
-        while (dvIt.next()) |dvPair| {
-            if (mandatoryVariables.contains(dvPair.var1) and mandatoryVariables.contains(dvPair.var2)) {
-                try mdvPairs.push(dvPair.*);
-            }
-        }
-
-        return MHIterator{ .state = state, .allocator = allocator, .mandatoryVariables = mandatoryVariables, .mhs = mhs, .len = len, .mdvPairs = mdvPairs };
+        return MHIterator{ .state = state, .allocator = allocator, .mandatoryVariables = mandatoryVariables, .mhs = mhs, .len = len };
     }
 
     fn deinit(self: *Self) void {
         // loop over all nodes so that all get freed
         while (self.next()) |_| {}
         self.mandatoryVariables.deinit();
-        self.mdvPairs.deinit();
     }
 
     fn count(self: *Self) usize {
@@ -704,19 +695,6 @@ const MHIterator = struct {
             self.len -= 1;
             return node.data;
         } else return null;
-    }
-
-    fn dvCount(self: *Self) usize {
-        return self.mdvPairs.len;
-    }
-
-    fn dvNext(self: *Self) ?DVPair {
-        if (self.nextDVPair < self.mdvPairs.len) {
-            self.nextDVPair += 1;
-            return self.mdvPairs.at(self.nextDVPair - 1).*;
-        } else {
-            return null;
-        }
     }
 };
 
