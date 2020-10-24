@@ -15,7 +15,7 @@ const prove = @import("prove.zig");
 const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
 pub fn copyExpression(allocator: *Allocator, original: Expression) !Expression {
-    return try sliceCopy(Token, allocator, original);
+    return try sliceCopy(CVToken, allocator, original);
 }
 
 // TODO: move to new utils.zig?
@@ -29,14 +29,17 @@ fn sliceCopy(comptime T: type, allocator: *Allocator, original: []const T) ![]co
 const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
 const FELabelList = std.SegmentedList(FELabel, 0);
+pub const DVPair = struct { var1: Token, var2: Token };
+const DVPairList = std.SegmentedList(DVPair, 0);
 
-pub const Expression = []const Token;
+pub const CVToken = struct { token: Token, cv: enum { C, V } };
+pub const Expression = []const CVToken;
 
 pub fn eqExpr(a: Expression, b: Expression) bool {
     const result = brk: {
         if (a.len != b.len) break :brk false;
         for (a) |ai, i| {
-            if (!eq(ai, b[i])) break :brk false;
+            if (!(eq(ai.token, b[i].token) and ai.cv == b[i].cv)) break :brk false;
         }
         break :brk true;
     };
@@ -52,8 +55,15 @@ pub fn eqExpr(a: Expression, b: Expression) bool {
 
 fn warnExpr(expr: Expression) void {
     var sep: []const u8 = "";
-    for (expr) |token| {
-        std.debug.warn("{1}{0}", .{ token, sep });
+    for (expr) |cvToken| {
+        switch (cvToken.cv) {
+            .C => {
+                std.debug.warn("{1}{0}", .{ cvToken.token, sep });
+            },
+            .V => {
+                std.debug.warn("{1}${0}", .{ cvToken.token, sep });
+            },
+        }
         sep = " ";
     }
 }
@@ -72,10 +82,12 @@ pub const Hypothesis = struct {
 pub const InferenceRule = struct {
     const Self = @This();
 
+    activeDVPairs: []DVPair,
     hypotheses: []Hypothesis,
     conclusion: Expression,
 
     fn deinit(self: *Self, allocator: *Allocator) void {
+        allocator.free(self.activeDVPairs);
         for (self.hypotheses) |*hyp| {
             hyp.deinit(allocator);
         }
@@ -112,6 +124,8 @@ pub const VerifyState = struct {
     meanings: TokenMap(Meaning),
     /// the active hypotheses, and whether they are $f or $e
     activeHypotheses: FELabelList,
+    /// the active distinct variable pairs
+    activeDVPairs: DVPairList,
     /// the difference between the current nested scope
     /// and its immediately surrounding scope
     currentScopeDiff: ?*ScopeDiff,
@@ -121,6 +135,7 @@ pub const VerifyState = struct {
             .allocator = allocator,
             .meanings = TokenMap(Meaning).init(allocator),
             .activeHypotheses = FELabelList.init(allocator),
+            .activeDVPairs = DVPairList.init(allocator),
             .currentScopeDiff = null,
         };
     }
@@ -129,6 +144,7 @@ pub const VerifyState = struct {
         while (self.currentScopeDiff) |scopeDiff| {
             scopeDiff.pop();
         }
+        self.activeDVPairs.deinit();
         self.activeHypotheses.deinit();
         var it = self.meanings.iterator();
         while (it.next()) |kv| {
@@ -142,7 +158,7 @@ pub const VerifyState = struct {
 
         var nr_statements: u64 = 0;
         var nr_proofs: u64 = 0;
-        defer std.debug.warn("\nFound {0} statements, of which {1} are $p.\n", .{ nr_statements, nr_proofs });
+        defer std.debug.warn("\nFound {0} statements so far, of which {1} are $p.\n", .{ nr_statements, nr_proofs });
 
         var frameArena = std.heap.ArenaAllocator.init(self.allocator);
         defer frameArena.deinit();
@@ -213,11 +229,30 @@ pub const VerifyState = struct {
                     std.event.Loop.startCpuBoundOperation();
 
                     const frame = try frameAllocator.create(@Frame(VerifyState.verifyProofConclusion));
-                    frame.* = async self.verifyProofConclusion(pStatement.label, pStatement.proof, rule.hypotheses, rule.conclusion);
+                    frame.* = async self.verifyProofConclusion(pStatement.label, pStatement.proof, rule.hypotheses, .{
+                        .expression = rule.conclusion,
+                        .dvPairs = rule.activeDVPairs,
+                    });
                     batch.add(frame);
                 },
-                .D => {
-                    // TODO: implement $d handling
+                .D => |dStatement| {
+                    var it1 = @as(TokenList, dStatement.variables).iterator(0);
+                    var i: usize = 0;
+                    while (it1.next()) |pVar1| : (i += 1) {
+                        if (self.meanings.get(pVar1.*)) |kv| {
+                            if (kv.value != .Variable) return Error.UnexpectedToken; // TODO: test
+                        } else return Error.UnexpectedToken; //TODO: test
+                        // ...
+                        var it2 = @as(TokenList, dStatement.variables).iterator(i + 1);
+                        while (it2.next()) |pVar2| {
+                            // TODO: error if var1 == var2
+                            _ = try self.activeDVPairs.push(.{ .var1 = pVar1.*, .var2 = pVar2.* });
+                            if (self.currentScopeDiff) |scopeDiff| {
+                                scopeDiff.nrActiveDVPairs += 1;
+                            }
+                        }
+                        // ...
+                    }
                 },
                 .BlockOpen => {
                     try ScopeDiff.push(self);
@@ -233,13 +268,38 @@ pub const VerifyState = struct {
         }
     }
 
-    fn verifyProofConclusion(self: *VerifyState, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: Expression) anyerror!void {
+    fn verifyProofConclusion(self: *VerifyState, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: struct {
+        expression: Expression,
+        dvPairs: []DVPair,
+    }) anyerror!void {
         // std.debug.warn("\nstarting to verify proof of {0}.\n", .{label});
-        // defer std.debug.warn("\nend of verify proof of {0}.\n", .{label});
+        // defer std.debug.warn("end of verify proof of {0}.\n", .{label});
         const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
-        const resultExpression = try prove.runProof(proof, hypotheses, selfAsRuleMeaningMap, self.allocator);
-        defer self.allocator.free(resultExpression);
-        if (!eqExpr(resultExpression, conclusion)) return Error.ResultMismatch;
+        var result = try prove.runProof(proof, hypotheses, selfAsRuleMeaningMap, self.allocator);
+        defer result.deinit(self.allocator);
+
+        if (!eqExpr(result.expression, conclusion.expression)) return Error.ResultMismatch;
+
+        // if not(every result.dvPairs is in conclusion.dvPairs) return Error.DVRMissing;
+        var it = result.dvPairs.iterator(0);
+        while (it.next()) |proofDVPair| {
+            for (conclusion.dvPairs) |ruleDVPair| {
+                if ((eq(proofDVPair.var1, ruleDVPair.var1) and eq(proofDVPair.var2, ruleDVPair.var2)) or
+                    (eq(proofDVPair.var1, ruleDVPair.var2) and eq(proofDVPair.var2, ruleDVPair.var1)))
+                {
+                    // proofDVPair is declared in an active $d statement
+                    break;
+                }
+            } else {
+                // proofDVPair is not declared in any active $d statement
+                std.debug.warn("$d {0} {1} $. expected but not found in the following list:\n", .{ proofDVPair.var1, proofDVPair.var2 });
+                for (conclusion.dvPairs) |ruleDVPair| {
+                    std.debug.warn("   $d {0} {1} $.\n", .{ ruleDVPair.var1, ruleDVPair.var2 });
+                }
+                std.debug.warn("(end of list)\n", .{});
+                return Error.DVRMissing; // TODO: Test
+            }
+        }
     }
 
     /// caller does not get ownership
@@ -255,6 +315,14 @@ pub const VerifyState = struct {
         const conclusion = try self.expressionOf(tokens);
         var it = try self.mandatoryHypothesesOf(conclusion);
         defer it.deinit();
+
+        var dvPairs = try self.allocator.alloc(DVPair, self.activeDVPairs.len);
+        var j: usize = 0;
+        var it2 = self.activeDVPairs.iterator(0);
+        while (it2.next()) |dvPair| : (j += 1) {
+            dvPairs[j] = dvPair.*;
+        }
+
         var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
         var i: usize = 0;
         while (it.next()) |feLabel| : (i += 1) {
@@ -264,7 +332,9 @@ pub const VerifyState = struct {
                 .isF = (feLabel.fe == .F),
             };
         }
+
         return InferenceRule{
+            .activeDVPairs = dvPairs,
             .hypotheses = hypotheses,
             .conclusion = conclusion,
         };
@@ -279,6 +349,7 @@ pub const VerifyState = struct {
     fn fromHypothesis(self: *Self, tokens: TokenList) !InferenceRule {
         const expression = try self.expressionOf(tokens);
         return InferenceRule{
+            .activeDVPairs = try self.allocator.alloc(DVPair, 0), // TODO: It seems we just can use &[_]DVPair{} ??
             .hypotheses = try self.allocator.alloc(Hypothesis, 0), // TODO: It seems we just can use &[_]Hypothesis{} ??
             .conclusion = expression,
         };
@@ -286,13 +357,20 @@ pub const VerifyState = struct {
 
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
     fn expressionOf(self: *Self, tokens: TokenList) !Expression {
-        var result = try self.allocator.alloc(Token, tokens.count());
+        var result = try self.allocator.alloc(CVToken, tokens.count());
         errdefer self.allocator.free(result);
         var i: usize = 0;
         var it = @as(TokenList, tokens).iterator(0);
         while (it.next()) |pToken| : (i += 1) {
             const kv = self.meanings.get(pToken.*) orelse return Error.UnexpectedToken;
-            result[i] = pToken.*;
+            result[i] = .{
+                .token = pToken.*,
+                .cv = switch (kv.value) {
+                    .Constant => .C,
+                    .Variable => .V,
+                    else => return Error.UnexpectedToken,
+                },
+            };
         }
         return result;
     }
@@ -308,6 +386,7 @@ const ScopeDiff = struct {
     activeTokens: TokenSet,
     variablesInFStatements: TokenSet,
     nrActiveHypotheses: usize,
+    nrActiveDVPairs: usize,
 
     fn push(state: *VerifyState) !void {
         const newScopeDiff = try state.allocator.create(ScopeDiff);
@@ -318,6 +397,7 @@ const ScopeDiff = struct {
             .activeTokens = TokenSet.init(state.allocator),
             .variablesInFStatements = TokenSet.init(state.allocator),
             .nrActiveHypotheses = 0,
+            .nrActiveDVPairs = 0,
         };
 
         state.currentScopeDiff = newScopeDiff;
@@ -325,6 +405,7 @@ const ScopeDiff = struct {
 
     fn pop(self: *Self) void {
         self.state.currentScopeDiff = self.optOuter;
+        self.deinitNrActiveDVPairs();
         self.deinitNrActiveHypotheses();
         self.deinitVariableInFStatements();
         self.deinitActiveTokens();
@@ -334,6 +415,12 @@ const ScopeDiff = struct {
     fn deinitNrActiveHypotheses(self: *Self) void {
         while (self.nrActiveHypotheses > 0) : (self.nrActiveHypotheses -= 1) {
             _ = self.state.activeHypotheses.pop();
+        }
+    }
+
+    fn deinitNrActiveDVPairs(self: *Self) void {
+        while (self.nrActiveDVPairs > 0) : (self.nrActiveDVPairs -= 1) {
+            _ = self.state.activeDVPairs.pop();
         }
     }
 
@@ -375,6 +462,83 @@ const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
 
+test "proof with $d violation" {
+    expectError(Error.DVRMissing, verify(
+        \\$c wff |- $.
+        \\$v P Q R $.
+        \\wp $f wff P $.
+        \\wq $f wff Q $.
+        \\wr $f wff R $.
+        \\${ $d P Q $. pq.1 $e |- P $. pq $a |- Q $. $}
+        \\
+        \\${
+        \\  qr.1 $e |- Q $. qr $p |- R $= wq wr qr.1 pq $.
+        \\$}
+    , std.testing.allocator));
+}
+
+test "proof with correct $d" {
+    // FOR DEBUGGING: const allocator = &std.heap.loggingAllocator(std.testing.allocator, std.io.getStdErr().outStream()).allocator;
+    try verify(
+        \\$c wff |- $.
+        \\$v P Q R $.
+        \\wp $f wff P $.
+        \\wq $f wff Q $.
+        \\wr $f wff R $.
+        \\${ $d P Q $. pq.1 $e |- P $. pq $a |- Q $. $}
+        \\
+        \\${
+        \\  $d Q R $.
+        \\  qr.1 $e |- Q $. qr $p |- R $= wq wr qr.1 pq $.
+        \\$}
+    , std.testing.allocator);
+}
+
+test "active DVR (found a memory leak)" {
+    try verify(
+        \\$c wff $.
+        \\$v P Q $.
+        \\wp $f wff P $.
+        \\wq $f wff Q $.
+        \\$d P Q $. pq.1 $e wff P $. pq $a wff Q $.
+    , std.testing.allocator);
+}
+
+test "count number of active $d pairs" {
+    var state = try VerifyState.init(std.testing.allocator);
+    defer state.deinit();
+    var n: usize = 0;
+    try state.addStatementsFrom("$v a b c d e $.");
+
+    try state.addStatementsFrom("$d $.");
+    expect(state.activeDVPairs.len == n + 0);
+    n = state.activeDVPairs.len;
+
+    try state.addStatementsFrom("$d a $.");
+    expect(state.activeDVPairs.len == n + 0);
+    n = state.activeDVPairs.len;
+
+    try state.addStatementsFrom("$d a a $.");
+    expect(state.activeDVPairs.len == n + 1);
+    n = state.activeDVPairs.len;
+
+    try state.addStatementsFrom("$d a b $.");
+    expect(state.activeDVPairs.len == n + 1);
+    n = state.activeDVPairs.len;
+
+    try state.addStatementsFrom("$d a b c d e $.");
+    expect(state.activeDVPairs.len == n + 10);
+    n = state.activeDVPairs.len;
+}
+
+test "$d with constant" {
+    expectError(Error.UnexpectedToken, verify("$c class $. $d class $.", std.testing.allocator));
+}
+
+test "$d with undeclared token" {
+    expectError(Error.UnexpectedToken, verify("$d class $.", std.testing.allocator));
+}
+
 test "use undeclared variable" {
     expectError(Error.UnexpectedToken, verify("$c wff $. wph $f wff ph $.", std.testing.allocator));
 }
@@ -406,8 +570,10 @@ test "tokenlist to expression" {
     defer std.testing.allocator.free(expression);
 
     expect(expression.len == 2);
-    expect(eq(expression[0], "wff"));
-    expect(eq(expression[1], "ph"));
+    expect(eq(expression[0].token, "wff"));
+    expect(expression[0].cv == .C);
+    expect(eq(expression[1].token, "ph"));
+    expect(expression[1].cv == .V);
 }
 
 test "no duplicate variable declarations" {
@@ -433,13 +599,13 @@ test "$v in nested scope, used in $a (use-after-free reproduction)" {
     try state.addStatementsFrom("$c class setvar $. ${ $v x $. vx.cv $f setvar x $. cv $a class x $.");
     const cv: InferenceRule = state.meanings.get("cv").?.value.Rule;
     const vx_cv: Hypothesis = cv.hypotheses[0];
-    const x: Token = vx_cv.expression[1];
+    const x: Token = vx_cv.expression[1].token;
     expect(eq(x, "x"));
 
     try state.addStatementsFrom("$}");
     const cv2: InferenceRule = state.meanings.get("cv").?.value.Rule;
     const vx_cv2: Hypothesis = cv.hypotheses[0];
-    const x2: Token = vx_cv.expression[1];
+    const x2: Token = vx_cv.expression[1].token;
     expect(eq(x2, "x"));
 }
 
@@ -507,20 +673,18 @@ const MHIterator = struct {
 
     state: *VerifyState,
     allocator: *Allocator,
+    mandatoryVariables: TokenSet,
     mhs: SinglyLinkedList(FELabel),
     len: usize,
+    nextDVPair: usize = 0,
 
     /// expression remains owned by the caller
     fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) !MHIterator {
         // initially mandatory variables: those from the given expression
         var mandatoryVariables = TokenSet.init(allocator);
-        defer mandatoryVariables.deinit();
-        for (expression) |token| {
-            if (state.meanings.get(token)) |kv| switch (kv.value) {
-                .Variable => _ = try mandatoryVariables.add(token),
-                else => {},
-            };
-        }
+        for (expression) |cvToken| if (cvToken.cv == .V) {
+            _ = try mandatoryVariables.add(cvToken.token);
+        };
 
         var mhs = SinglyLinkedList(FELabel).init();
         var len: usize = 0;
@@ -531,7 +695,8 @@ const MHIterator = struct {
                 .F => {
                     const fRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
                     assert(fRule.conclusion.len == 2);
-                    const fVariable = fRule.conclusion[1];
+                    assert(fRule.conclusion[1].cv == .V);
+                    const fVariable = fRule.conclusion[1].token;
                     if (mandatoryVariables.contains(fVariable)) {
                         // include every $f for every mandatory variable
                         var node = try mhs.createNode(.{ .label = activeHypothesis.label, .fe = .F }, allocator);
@@ -547,22 +712,20 @@ const MHIterator = struct {
                     // the variables of the $e hypothesis are also mandatory
                     const eRule = state.meanings.get(activeHypothesis.label).?.value.Rule;
                     const eExpression = eRule.conclusion;
-                    for (eExpression) |token| {
-                        if (state.meanings.get(token)) |kv| switch (kv.value) {
-                            .Variable => _ = try mandatoryVariables.add(token),
-                            else => {},
-                        };
-                    }
+                    for (eExpression) |cvToken| if (cvToken.cv == .V) {
+                        _ = try mandatoryVariables.add(cvToken.token);
+                    };
                 },
             }
         }
 
-        return MHIterator{ .state = state, .allocator = allocator, .mhs = mhs, .len = len };
+        return MHIterator{ .state = state, .allocator = allocator, .mandatoryVariables = mandatoryVariables, .mhs = mhs, .len = len };
     }
 
     fn deinit(self: *Self) void {
         // loop over all nodes so that all get freed
         while (self.next()) |_| {}
+        self.mandatoryVariables.deinit();
     }
 
     fn count(self: *Self) usize {
@@ -664,8 +827,8 @@ test "inference rule with $f and $e mandatory hypotheses" {
 
     const alltrueRule = state.meanings.get("alltrue").?.value.Rule;
     expect(alltrueRule.hypotheses.len == 3);
-    expect(eq(alltrueRule.hypotheses[1].expression[1], "ph"));
-    expect(eq(alltrueRule.conclusion[0], "|-"));
+    expect(eq(alltrueRule.hypotheses[1].expression[1].token, "ph"));
+    expect(eq(alltrueRule.conclusion[0].token, "|-"));
 }
 
 test "multiple proofs" {
