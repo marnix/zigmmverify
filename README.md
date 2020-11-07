@@ -39,8 +39,6 @@ Build using zig 0.6.0, then just run the resulting binary.
   Also encapsulate some parts.
   Also try to avoid duplication in statement handling.
 
-- Support $d.
-
 - Support $[ ... $] includes.  (Presumably in the tokenizer.)
 
 - Support `?` in proofs.

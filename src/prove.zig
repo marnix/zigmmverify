@@ -15,18 +15,35 @@ const verify = @import("verify.zig");
 const Expression = verify.Expression;
 const eqExpr = verify.eqExpr;
 const copyExpression = verify.copyExpression;
+const DVPair = verify.DVPair;
 const Hypothesis = verify.Hypothesis;
 const InferenceRule = verify.InferenceRule;
-const VerifyState = verify.VerifyState;
+
+// TODO: move to new utils.zig?
+fn assertCoercible(comptime T: type, comptime U: type) void {
+    var someT: T = undefined;
+    assert(@TypeOf(@as(U, someT)) == U);
+}
 
 const Substitution = TokenMap(Expression);
 
+/// A 'rule meaning map' is an instance of a struct with
+/// an fn called `get` that takes a Token and returns InferenceRule (or an error).
+fn assertIsRuleMeaningMap(map: anytype) void {
+    comptime const typeOfFnGet = @typeInfo(@TypeOf(map.get)).BoundFn;
+    assert(typeOfFnGet.args.len == 2);
+    assertCoercible(Token, typeOfFnGet.args[1].arg_type.?);
+    assertCoercible(typeOfFnGet.return_type.?, anyerror!InferenceRule);
+}
+
+/// A wrapper around a value of type `T` and a `getter: fn (T, Token) anyerror!InferenceRule`,
+/// which satisfies `assertIsRuleMeaningMap()`.
 pub fn AsRuleMeaningMap(comptime T: type) type {
     return struct {
         const Self = @This();
+
         child: T,
-        getter: fn (T, Token) Error!InferenceRule,
-        /// This is just an abbreviation, to make the caller better readable.
+        getter: fn (T, Token) anyerror!InferenceRule,
         fn get(self: Self, token: Token) anyerror!InferenceRule {
             return (self.getter)(self.child, token);
         }
@@ -38,22 +55,21 @@ const ProofStack = struct {
     allocator: *Allocator,
     expressions: std.SegmentedList(Expression, 64),
     /// we collect these and clean them up at the very end
-    ownedExpressions: std.SegmentedList(Expression, 64),
+    arena: std.heap.ArenaAllocator,
+    dvPairs: std.SegmentedList(DVPair, 16),
 
     fn init(allocator: *Allocator) Self {
         return ProofStack{
             .allocator = allocator,
             .expressions = std.SegmentedList(Expression, 64).init(allocator),
-            .ownedExpressions = std.SegmentedList(Expression, 64).init(allocator),
+            .arena = std.heap.ArenaAllocator.init(allocator),
+            .dvPairs = std.SegmentedList(DVPair, 16).init(allocator),
         };
     }
     fn deinit(self: *Self) void {
         self.expressions.deinit();
-        var it = self.ownedExpressions.iterator(0);
-        while (it.next()) |pOwnedExpression| {
-            self.allocator.free(pOwnedExpression.*);
-        }
-        self.ownedExpressions.deinit();
+        self.arena.deinit();
+        // no self.dvPairs.deinit(), because client keeps ownership
     }
 
     fn isEmpty(self: *Self) bool {
@@ -92,8 +108,8 @@ const ProofStack = struct {
                 if (hyp.isF) {
                     std.debug.assert(hyp.expression.len == 2);
                     if (hypotheses[i].len == 0) return Error.HypothesisMismatch; // TODO: test
-                    if (!eq(hyp.expression[0], hypotheses[i][0])) return Error.HypothesisMismatch; // TODO: test
-                    _ = try substitution.put(hyp.expression[1], hypotheses[i][1..]);
+                    if (!eq(hyp.expression[0].token, hypotheses[i][0].token)) return Error.HypothesisMismatch; // TODO: test
+                    _ = try substitution.put(hyp.expression[1].token, hypotheses[i][1..]);
                 }
             }
         }
@@ -111,15 +127,39 @@ const ProofStack = struct {
             }
         }
 
-        const expression = try substitute(rule.conclusion, substitution, self.allocator);
-        try self.ownedExpressions.push(expression);
+        // add distinct variable restrictions imposed by this inference rule
+        for (rule.activeDVPairs) |dvPair| {
+            // get the 'distinct expressions', skipping any optional DVRs
+            const expr1 = if (substitution.get(dvPair.var1)) |e| e else continue;
+            const expr2 = if (substitution.get(dvPair.var2)) |e| e else continue;
+            // create DVRs for every pair of variables in the two expressions
+            for (expr1) |cvToken1| if (cvToken1.cv == .V) {
+                for (expr2) |cvToken2| if (cvToken2.cv == .V) {
+                    // note: don't try to check for duplicates, that is probably not worth it
+                    try self.dvPairs.push(.{ .var1 = cvToken1.token, .var2 = cvToken2.token });
+                };
+            };
+        }
+
+        const expression = try substitute(rule.conclusion, substitution, &self.arena.allocator);
         try self.pushExpression(expression);
     }
 };
 
+pub const RunProofResult = struct {
+    expression: Expression,
+    dvPairs: std.SegmentedList(DVPair, 16),
+
+    pub fn deinit(self: *@This(), allocator: *Allocator) void {
+        allocator.free(self.expression);
+        self.dvPairs.deinit();
+    }
+};
+
 /// caller becomes owner of allocated result
-pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anytype, allocator: *Allocator) !Expression {
-    // TODO: assert, in some way, that @TypeOf(ruleMeaningMap) is a type returned by AsRuleMeaningMap()
+pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anytype, allocator: *Allocator) !RunProofResult {
+    assertIsRuleMeaningMap(ruleMeaningMap);
+
     const Modes = enum { Initial, Uncompressed, CompressedPart1, CompressedPart2 };
     var mode = Modes.Initial;
 
@@ -159,6 +199,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                         // handle every character of t.*, building numbers
                         if ('U' <= c and c <= 'Y') {
                             compressedNumber = compressedNumber * 5 + (c - 'U' + 1);
+                            // number is still incomplete
                         } else if ('A' <= c and c <= 'T') {
                             compressedNumber = compressedNumber * 20 + (c - 'A' + 1);
                             // we have a complete number now
@@ -176,10 +217,11 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                                     break :brk try proofStack.pushInferenceRule(try ruleMeaningMap.get(compressedLabels.at(i).*));
                                 }
                                 i -= compressedLabels.len;
-                                // ...expressions marked with 'Z'
+                                // ...expressions marked with 'Z'...
                                 if (i < markedExpressions.len) {
                                     break :brk try proofStack.pushExpression(markedExpressions.at(i).*);
                                 }
+                                // ...or larger than expected.
                                 return Error.NumberTooLarge; // TODO: test
                             }
                             compressedNumber = 0;
@@ -193,6 +235,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                 },
             }
             if (!reprocessCurrentToken) break;
+            reprocessCurrentToken = false;
         }
     }
     if (mode == .CompressedPart1) return Error.Incomplete; // TODO: test
@@ -200,27 +243,31 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
     if (proofStack.isEmpty()) return Error.Incomplete; // TODO: test
     if (!proofStack.isSingle()) return Error.UnexpectedToken; // TODO: test; better error code?
 
-    return try copyExpression(allocator, proofStack.top());
+    return RunProofResult{
+        .expression = try copyExpression(allocator, proofStack.top()),
+        .dvPairs = proofStack.dvPairs,
+    };
 }
 
 /// caller becomes owner of allocated result
 fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Expression {
-    var resultAsList = SegmentedList(Token, 128).init(allocator);
+    var resultAsList = SegmentedList(verify.CVToken, 128).init(allocator);
     defer resultAsList.deinit();
-    for (orig) |token| {
-        if (subst.get(token)) |repl| {
-            for (repl) |replToken| {
-                try resultAsList.push(replToken);
+    for (orig) |cvToken| {
+        if (subst.get(cvToken.token)) |repl| {
+            if (cvToken.cv != .V) return Error.UnexpectedToken; // TODO: test
+            for (repl) |replCVToken| {
+                try resultAsList.push(replCVToken);
             }
         } else {
-            try resultAsList.push(token);
+            try resultAsList.push(cvToken);
         }
     }
 
-    var result = try allocator.alloc(Token, resultAsList.len);
+    var result = try allocator.alloc(verify.CVToken, resultAsList.len);
     var it = resultAsList.iterator(0);
     var i: usize = 0;
-    while (it.next()) |pToken| : (i += 1) result[i] = pToken.*;
+    while (it.next()) |pCVToken| : (i += 1) result[i] = pCVToken.*;
     return result;
 }
 
@@ -229,24 +276,30 @@ fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Exp
 const expect = std.testing.expect;
 
 test "simple substitution" {
-    const original = &[_]Token{ "class", "x" };
+    const original = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
     var substitution = Substitution.init(std.testing.allocator);
     defer substitution.deinit();
-    _ = try substitution.put("x", &[_]Token{"y"});
-    const expected = &[_]Token{ "class", "y" };
+    _ = try substitution.put("x", &[_]verify.CVToken{.{ .token = "y", .cv = .V }});
+    const expected = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "y", .cv = .V } };
     const actual = try substitute(original, substitution, std.testing.allocator);
     defer std.testing.allocator.free(actual);
     expect(eqExpr(actual, expected));
 }
 
 test "compare equal expressions" {
-    const a = &[_]Token{ "class", "x" };
-    const b = &[_]Token{ "class", "x" };
+    const a = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const b = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
     expect(eqExpr(a, b));
 }
 
 test "compare unequal expressions" {
-    const a = &[_]Token{ "a", "x" };
-    const b = &[_]Token{ "b", "x" };
+    const a = &[_]verify.CVToken{ .{ .token = "a", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const b = &[_]verify.CVToken{ .{ .token = "b", .cv = .C }, .{ .token = "x", .cv = .V } };
+    expect(!eqExpr(a, b));
+}
+
+test "compare unequal expressions, constant vs variable" {
+    const a = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const b = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .C } };
     expect(!eqExpr(a, b));
 }
