@@ -1,5 +1,7 @@
 _Note that this branch is built using nightly 'master' zig.
-The more stable branch is zig-0.6.0._
+The more actively developed branch is
+[zig-0.7.x](https://github.com/marnix/zigmmverify/tree/zig-0.7.x).
+Changes are periodically merged from there to this branch._
 
 [![Build with zig master](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%20master/badge.svg?branch=zig-master)](https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-master)
 
