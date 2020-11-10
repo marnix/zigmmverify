@@ -1,4 +1,4 @@
-name: Build with zig 0.7.x
+name: Build with zig 0.7.0
 
 on:
   push:
