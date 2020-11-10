@@ -1,4 +1,4 @@
-[![Build with Zig 0.7.x](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%200.7.x/badge.svg?branch=zig-0.7.x)](https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-0.7.x)
+[![Build with Zig 0.7.0](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%200.7.x/badge.svg?branch=zig-0.7.x)](https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-0.7.x)
 
 # A [Metamath](http://metamath.org) proof verifier in [Zig](https://ziglang.org/)
 
