@@ -1,3 +1,7 @@
+_Note that this zig-0.6.0 branch has been frozen, and will not be updated anymore.
+Active development continues
+on the [zig-0.7.x](https://github.com/marnix/zigmmverify/tree/zig-0.7.x) branch._
+
 [![Build with zig 0.6.0](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%200.6.0/badge.svg?branch=zig-0.6.0)](https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-0.6.0)
 
 # A [Metamath](http://metamath.org) proof verifier in [Zig](https://ziglang.org/)
