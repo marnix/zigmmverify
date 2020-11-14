@@ -13,6 +13,7 @@ pub const Error = error{
     // proof errors
     HypothesisMismatch,
     ResultMismatch,
+    DVRMissing,
     // compressed proof errors
     NumberIncomplete,
     NumberZEarly,
