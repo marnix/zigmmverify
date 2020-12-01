@@ -264,8 +264,8 @@ pub const VerifyState = struct {
                 },
             }
 
-            try batch.wait();
         }
+        try batch.wait();
     }
 
     fn verifyProofConclusion(self: *VerifyState, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: struct {
