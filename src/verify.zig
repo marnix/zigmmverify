@@ -10,6 +10,8 @@ const TokenSet = tokenize.TokenSet;
 const TokenMap = tokenize.TokenMap;
 
 const parse = @import("parse.zig");
+const Statement = parse.Statement;
+const StatementIterator = parse.StatementIterator;
 
 const prove = @import("prove.zig");
 const AsRuleMeaningMap = prove.AsRuleMeaningMap;
@@ -115,10 +117,24 @@ const Meaning = union(MeaningType) {
     }
 };
 
-pub const VerifyState = struct {
+const RuleIteratorItem = struct {
+    const Self = @This();
+
+    label: Token,
+    rule: InferenceRule,
+    proof: ?TokenList = null,
+
+    fn deinit(self: *Self) void {
+        if (self.proof) |*p| p.deinit();
+    }
+};
+
+const RuleIterator = struct {
     const Self = @This();
 
     allocator: *Allocator,
+
+    statements: ?parse.StatementIterator,
 
     /// what each active token means
     meanings: TokenMap(Meaning),
@@ -130,9 +146,10 @@ pub const VerifyState = struct {
     /// and its immediately surrounding scope
     currentScopeDiff: ?*ScopeDiff,
 
-    fn init(allocator: *Allocator) !Self {
+    pub fn init(allocator: *Allocator) !Self {
         return Self{
             .allocator = allocator,
+            .statements = null,
             .meanings = TokenMap(Meaning).init(allocator),
             .activeHypotheses = FELabelList.init(allocator),
             .activeDVPairs = DVPairList.init(allocator),
@@ -140,7 +157,7 @@ pub const VerifyState = struct {
         };
     }
 
-    fn deinit(self: *Self) void {
+    pub fn deinit(self: *Self) void {
         while (self.currentScopeDiff) |scopeDiff| {
             scopeDiff.pop();
         }
@@ -153,153 +170,119 @@ pub const VerifyState = struct {
         self.meanings.deinit();
     }
 
-    fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
-        const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
-
-        var nr_statements: u64 = 0;
-        var nr_proofs: u64 = 0;
-        defer std.debug.warn("\nFound {0} statements so far, of which {1} are $p.\n", .{ nr_statements, nr_proofs });
-
-        var frameArena = std.heap.ArenaAllocator.init(self.allocator);
-        defer frameArena.deinit();
-        const frameAllocator = &frameArena.allocator;
-
-        var batch = std.event.Batch(anyerror!void, 1000, .auto_async).init();
-
-        var statements = parse.StatementIterator.init(self.allocator, buffer);
-        while (try statements.next()) |statement| {
-            defer statement.deinit(self.allocator);
-            nr_statements += 1;
-
-            switch (statement.*) {
-                .C => |cStatement| {
-                    if (self.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
-                    var it = @as(TokenList, cStatement.constants).iterator(0);
-                    while (it.next()) |constant| {
-                        if (self.meanings.get(constant.*)) |_| return Error.Duplicate;
-                        const kv = try self.meanings.put(constant.*, MeaningType.Constant);
-                    }
-                },
-                .V => |vStatement| {
-                    var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
-                    while (it.next()) |variable| {
-                        if (self.meanings.get(variable.*)) |_| return Error.Duplicate;
-                        const kv = try self.meanings.put(variable.*, Meaning{ .Variable = .{ .usedInFStatement = false } });
-                        if (self.currentScopeDiff) |scopeDiff| {
-                            _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
-                        }
-                    }
-                },
-                .F => |fStatement| {
-                    if (self.meanings.get(fStatement.label)) |_| return Error.Duplicate;
-                    try self.meanings.put(fStatement.label, Meaning{ .Rule = try self.fromHypothesis(fStatement.tokens) });
-                    const variable = fStatement.tokens.at(1).*;
-                    if (self.meanings.get(variable)) |meaning| {
-                        if (meaning != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable,
-                        if (meaning.Variable.usedInFStatement) return Error.Duplicate;
-                    } else unreachable; // $f k x $. without $v x $. is already detected in fromHypothesis() call above
-                    try self.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = true } });
-                    _ = try self.activeHypotheses.push(.{ .label = fStatement.label, .fe = .F });
-                    if (self.currentScopeDiff) |scopeDiff| {
-                        scopeDiff.nrActiveHypotheses += 1;
-                        _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
-                        assert(!scopeDiff.variablesInFStatements.contains(variable));
-                        _ = try scopeDiff.variablesInFStatements.add(variable);
-                    }
-                },
-                .E => |eStatement| {
-                    if (self.meanings.get(eStatement.label)) |_| return Error.Duplicate;
-                    try self.meanings.put(eStatement.label, Meaning{ .Rule = try self.fromHypothesis(eStatement.tokens) });
-                    _ = try self.activeHypotheses.push(.{ .label = eStatement.label, .fe = .E });
-                    if (self.currentScopeDiff) |scopeDiff| {
-                        scopeDiff.nrActiveHypotheses += 1;
-                        _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
-                    }
-                },
-                .A => |aStatement| {
-                    if (self.meanings.get(aStatement.label)) |_| return Error.Duplicate;
-                    try self.meanings.put(aStatement.label, Meaning{ .Rule = try self.inferenceRuleOf(aStatement.tokens) });
-                },
-                .P => |pStatement| {
-                    nr_proofs += 1;
-                    if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
-                    const rule = try self.inferenceRuleOf(pStatement.tokens);
-                    _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = rule });
-
-                    std.event.Loop.startCpuBoundOperation();
-
-                    const frame = try frameAllocator.create(@Frame(VerifyState.verifyProofConclusion));
-                    frame.* = async self.verifyProofConclusion(pStatement.label, pStatement.proof, rule.hypotheses, .{
-                        .expression = rule.conclusion,
-                        .dvPairs = rule.activeDVPairs,
-                    });
-                    batch.add(frame);
-                },
-                .D => |dStatement| {
-                    var it1 = @as(TokenList, dStatement.variables).iterator(0);
-                    var i: usize = 0;
-                    while (it1.next()) |pVar1| : (i += 1) {
-                        if (self.meanings.get(pVar1.*)) |meaning| {
-                            if (meaning != .Variable) return Error.UnexpectedToken; // TODO: test
-                        } else return Error.UnexpectedToken; //TODO: test
-                        // ...
-                        var it2 = @as(TokenList, dStatement.variables).iterator(i + 1);
-                        while (it2.next()) |pVar2| {
-                            // TODO: error if var1 == var2
-                            _ = try self.activeDVPairs.push(.{ .var1 = pVar1.*, .var2 = pVar2.* });
-                            if (self.currentScopeDiff) |scopeDiff| {
-                                scopeDiff.nrActiveDVPairs += 1;
-                            }
-                        }
-                        // ...
-                    }
-                },
-                .BlockOpen => {
-                    try ScopeDiff.push(self);
-                },
-                .BlockClose => {
-                    if (self.currentScopeDiff) |scopeDiff| {
-                        scopeDiff.pop();
-                    } else return Error.UnexpectedToken;
-                },
-            }
-
-        }
-        try batch.wait();
+    pub fn addStatementsFrom(self: *Self, buffer: []const u8, batch: anytype, frameAllocator: anytype) !void {
+        self.statements = StatementIterator.init(self.allocator, buffer);
     }
 
-    fn verifyProofConclusion(self: *VerifyState, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: struct {
-        expression: Expression,
-        dvPairs: []DVPair,
-    }) anyerror!void {
-        // std.debug.warn("\nstarting to verify proof of {0}.\n", .{label});
-        // defer std.debug.warn("end of verify proof of {0}.\n", .{label});
-        const selfAsRuleMeaningMap = AsRuleMeaningMap(*VerifyState){ .child = self, .getter = Self.getRuleMeaningOf };
-        var result = try prove.runProof(proof, hypotheses, selfAsRuleMeaningMap, self.allocator);
-        defer result.deinit(self.allocator);
-
-        if (!eqExpr(result.expression, conclusion.expression)) return Error.ResultMismatch;
-
-        // if not(every result.dvPairs is in conclusion.dvPairs) return Error.DVRMissing;
-        var it = result.dvPairs.iterator(0);
-        while (it.next()) |proofDVPair| {
-            for (conclusion.dvPairs) |ruleDVPair| {
-                if ((eq(proofDVPair.var1, ruleDVPair.var1) and eq(proofDVPair.var2, ruleDVPair.var2)) or
-                    (eq(proofDVPair.var1, ruleDVPair.var2) and eq(proofDVPair.var2, ruleDVPair.var1)))
-                {
-                    // proofDVPair is declared in an active $d statement
-                    break;
-                }
+    pub fn next(self: *Self) !?RuleIteratorItem {
+        if (self.statements == null) return null;
+        var nextItem: ?RuleIteratorItem = null;
+        while (nextItem == null) {
+            if (try self.statements.?.next()) |statement| {
+                nextItem = try self.add(statement);
             } else {
-                // proofDVPair is not declared in any active $d statement
-                std.debug.warn("$d {0} {1} $. expected but not found in the following list:\n", .{ proofDVPair.var1, proofDVPair.var2 });
-                for (conclusion.dvPairs) |ruleDVPair| {
-                    std.debug.warn("   $d {0} {1} $.\n", .{ ruleDVPair.var1, ruleDVPair.var2 });
-                }
-                std.debug.warn("(end of list)\n", .{});
-                return Error.DVRMissing; // TODO: Test
+                self.statements = null;
+                break;
             }
         }
+        return nextItem;
+    }
+
+    /// Consumes statement.
+    fn add(self: *Self, statement: *Statement) !?RuleIteratorItem {
+        var deinit_statement = true;
+        defer if (deinit_statement) statement.deinit(self.allocator);
+
+        var nextItem: ?RuleIteratorItem = null;
+        switch (statement.*) {
+            .C => |cStatement| {
+                if (self.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
+                var it = @as(TokenList, cStatement.constants).iterator(0);
+                while (it.next()) |constant| {
+                    if (self.meanings.get(constant.*)) |_| return Error.Duplicate;
+                    const kv = try self.meanings.put(constant.*, MeaningType.Constant);
+                }
+            },
+            .V => |vStatement| {
+                var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
+                while (it.next()) |variable| {
+                    if (self.meanings.get(variable.*)) |_| return Error.Duplicate;
+                    const kv = try self.meanings.put(variable.*, Meaning{ .Variable = .{ .usedInFStatement = false } });
+                    if (self.currentScopeDiff) |scopeDiff| {
+                        _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
+                    }
+                }
+            },
+            .F => |fStatement| {
+                if (self.meanings.get(fStatement.label)) |_| return Error.Duplicate;
+                try self.meanings.put(fStatement.label, Meaning{ .Rule = try self.fromHypothesis(fStatement.tokens) });
+                const variable = fStatement.tokens.at(1).*;
+                if (self.meanings.get(variable)) |meaning| {
+                    if (meaning != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable,
+                    if (meaning.Variable.usedInFStatement) return Error.Duplicate;
+                } else unreachable; // $f k x $. without $v x $. is already detected in fromHypothesis() call above
+                try self.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = true } });
+                _ = try self.activeHypotheses.push(.{ .label = fStatement.label, .fe = .F });
+                if (self.currentScopeDiff) |scopeDiff| {
+                    scopeDiff.nrActiveHypotheses += 1;
+                    _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
+                    assert(!scopeDiff.variablesInFStatements.contains(variable));
+                    _ = try scopeDiff.variablesInFStatements.add(variable);
+                }
+            },
+            .E => |eStatement| {
+                if (self.meanings.get(eStatement.label)) |_| return Error.Duplicate;
+                try self.meanings.put(eStatement.label, Meaning{ .Rule = try self.fromHypothesis(eStatement.tokens) });
+                _ = try self.activeHypotheses.push(.{ .label = eStatement.label, .fe = .E });
+                if (self.currentScopeDiff) |scopeDiff| {
+                    scopeDiff.nrActiveHypotheses += 1;
+                    _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
+                }
+            },
+            .A => |aStatement| {
+                if (self.meanings.get(aStatement.label)) |_| return Error.Duplicate;
+                const rule = try self.inferenceRuleOf(aStatement.tokens);
+                try self.meanings.put(aStatement.label, Meaning{ .Rule = rule });
+                nextItem = .{ .label = aStatement.label, .rule = rule };
+            },
+            .P => |pStatement| {
+                if (self.meanings.get(pStatement.label)) |_| return Error.Duplicate;
+                const rule = try self.inferenceRuleOf(pStatement.tokens);
+                _ = try self.meanings.put(pStatement.label, Meaning{ .Rule = rule });
+                const label = pStatement.label;
+                const proof = statement.deinitLeavingProof(self.allocator);
+                deinit_statement = false;
+                nextItem = .{ .label = label, .rule = rule, .proof = proof };
+            },
+            .D => |dStatement| {
+                var it1 = @as(TokenList, dStatement.variables).iterator(0);
+                var i: usize = 0;
+                while (it1.next()) |pVar1| : (i += 1) {
+                    if (self.meanings.get(pVar1.*)) |meaning| {
+                        if (meaning != .Variable) return Error.UnexpectedToken; // TODO: test
+                    } else return Error.UnexpectedToken; //TODO: test
+                    // ...
+                    var it2 = @as(TokenList, dStatement.variables).iterator(i + 1);
+                    while (it2.next()) |pVar2| {
+                        // TODO: error if var1 == var2
+                        _ = try self.activeDVPairs.push(.{ .var1 = pVar1.*, .var2 = pVar2.* });
+                        if (self.currentScopeDiff) |scopeDiff| {
+                            scopeDiff.nrActiveDVPairs += 1;
+                        }
+                    }
+                    // ...
+                }
+            },
+            .BlockOpen => {
+                try ScopeDiff.push(self);
+            },
+            .BlockClose => {
+                if (self.currentScopeDiff) |scopeDiff| {
+                    scopeDiff.pop();
+                } else return Error.UnexpectedToken;
+            },
+        }
+        return nextItem;
     }
 
     /// caller does not get ownership
@@ -381,46 +364,46 @@ pub const VerifyState = struct {
 const ScopeDiff = struct {
     const Self = @This();
 
-    state: *VerifyState,
+    iter: *RuleIterator,
     optOuter: ?*ScopeDiff,
     activeTokens: TokenSet,
     variablesInFStatements: TokenSet,
     nrActiveHypotheses: usize,
     nrActiveDVPairs: usize,
 
-    fn push(state: *VerifyState) !void {
-        const newScopeDiff = try state.allocator.create(ScopeDiff);
-        errdefer state.allocator.destroy(newScopeDiff);
+    fn push(iter: *RuleIterator) !void {
+        const newScopeDiff = try iter.allocator.create(ScopeDiff);
+        errdefer iter.allocator.destroy(newScopeDiff);
         newScopeDiff.* = Self{
-            .state = state,
-            .optOuter = state.currentScopeDiff,
-            .activeTokens = TokenSet.init(state.allocator),
-            .variablesInFStatements = TokenSet.init(state.allocator),
+            .iter = iter,
+            .optOuter = iter.currentScopeDiff,
+            .activeTokens = TokenSet.init(iter.allocator),
+            .variablesInFStatements = TokenSet.init(iter.allocator),
             .nrActiveHypotheses = 0,
             .nrActiveDVPairs = 0,
         };
 
-        state.currentScopeDiff = newScopeDiff;
+        iter.currentScopeDiff = newScopeDiff;
     }
 
     fn pop(self: *Self) void {
-        self.state.currentScopeDiff = self.optOuter;
+        self.iter.currentScopeDiff = self.optOuter;
         self.deinitNrActiveDVPairs();
         self.deinitNrActiveHypotheses();
         self.deinitVariableInFStatements();
         self.deinitActiveTokens();
-        self.state.allocator.destroy(self);
+        self.iter.allocator.destroy(self);
     }
 
     fn deinitNrActiveHypotheses(self: *Self) void {
         while (self.nrActiveHypotheses > 0) : (self.nrActiveHypotheses -= 1) {
-            _ = self.state.activeHypotheses.pop();
+            _ = self.iter.activeHypotheses.pop();
         }
     }
 
     fn deinitNrActiveDVPairs(self: *Self) void {
         while (self.nrActiveDVPairs > 0) : (self.nrActiveDVPairs -= 1) {
-            _ = self.state.activeDVPairs.pop();
+            _ = self.iter.activeDVPairs.pop();
         }
     }
 
@@ -428,11 +411,11 @@ const ScopeDiff = struct {
         var it = self.variablesInFStatements.iterator();
         while (it.next()) |kv| {
             const variable = kv.key;
-            if (self.state.meanings.get(variable)) |meaning| {
+            if (self.iter.meanings.get(variable)) |meaning| {
                 assert(meaning == .Variable);
                 assert(meaning.Variable.usedInFStatement == true);
             } else unreachable;
-            _ = self.state.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = false } }) catch unreachable; // in-place update can't fail?
+            _ = self.iter.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = false } }) catch unreachable; // in-place update can't fail?
         }
         self.variablesInFStatements.deinit();
     }
@@ -440,8 +423,8 @@ const ScopeDiff = struct {
     fn deinitActiveTokens(self: *Self) void {
         var it = self.activeTokens.iterator();
         while (it.next()) |kv| {
-            if (self.state.meanings.remove(kv.key)) |*kv2| {
-                kv2.value.deinit(self.state.allocator);
+            if (self.iter.meanings.remove(kv.key)) |*kv2| {
+                kv2.value.deinit(self.iter.allocator);
             } else unreachable;
         }
         self.activeTokens.deinit();
@@ -450,10 +433,74 @@ const ScopeDiff = struct {
 
 pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
     errdefer |err| std.debug.warn("\nError {0} happened...\n", .{err});
-    var state = try VerifyState.init(allocator);
-    defer state.deinit();
-    try state.addStatementsFrom(buffer);
-    if (state.currentScopeDiff) |_| return Error.Incomplete; // unclosed $}
+    var iter = try RuleIterator.init(allocator);
+    defer iter.deinit();
+    try verifyPart(&iter, buffer);
+    if (iter.currentScopeDiff) |_| return Error.Incomplete; // unclosed $}
+}
+
+/// This only is a separate function to make testing easier
+fn verifyPart(iter: *RuleIterator, buffer: []const u8) !void {
+    var frameArena = std.heap.ArenaAllocator.init(iter.allocator);
+    defer frameArena.deinit();
+    const frameAllocator = &frameArena.allocator;
+
+    var nr_proofs: u64 = 0;
+    defer std.debug.warn("\nFound {0} $p statements so far.\n", .{nr_proofs});
+
+    var batch = std.event.Batch(anyerror!void, 1000, .auto_async).init();
+
+    try iter.addStatementsFrom(buffer, &batch, frameAllocator);
+    while (try iter.next()) |*item| {
+        defer item.deinit();
+        if (item.proof) |proof| {
+            nr_proofs += 1;
+            const rule = item.rule;
+            std.event.Loop.startCpuBoundOperation();
+            const frame = try frameAllocator.create(@Frame(verifyProofConclusion));
+            frame.* = async verifyProofConclusion(iter, item.label, proof, rule.hypotheses, .{
+                .expression = rule.conclusion,
+                .dvPairs = rule.activeDVPairs,
+            });
+            batch.add(frame);
+        }
+    }
+
+    try batch.wait();
+}
+
+fn verifyProofConclusion(self: *RuleIterator, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: struct {
+    expression: Expression,
+    dvPairs: []DVPair,
+}) anyerror!void {
+    // std.debug.warn("\nstarting to verify proof of {0}.\n", .{label});
+    // defer std.debug.warn("end of verify proof of {0}.\n", .{label});
+    const selfAsRuleMeaningMap = AsRuleMeaningMap(*RuleIterator){ .child = self, .getter = RuleIterator.getRuleMeaningOf };
+    var result = try prove.runProof(proof, hypotheses, selfAsRuleMeaningMap, self.allocator);
+    defer result.deinit(self.allocator);
+
+    if (!eqExpr(result.expression, conclusion.expression)) return Error.ResultMismatch;
+
+    // if not(every result.dvPairs is in conclusion.dvPairs) return Error.DVRMissing;
+    var it = result.dvPairs.iterator(0);
+    while (it.next()) |proofDVPair| {
+        for (conclusion.dvPairs) |ruleDVPair| {
+            if ((eq(proofDVPair.var1, ruleDVPair.var1) and eq(proofDVPair.var2, ruleDVPair.var2)) or
+                (eq(proofDVPair.var1, ruleDVPair.var2) and eq(proofDVPair.var2, ruleDVPair.var1)))
+            {
+                // proofDVPair is declared in an active $d statement
+                break;
+            }
+        } else {
+            // proofDVPair is not declared in any active $d statement
+            std.debug.warn("$d {0} {1} $. expected but not found in the following list:\n", .{ proofDVPair.var1, proofDVPair.var2 });
+            for (conclusion.dvPairs) |ruleDVPair| {
+                std.debug.warn("   $d {0} {1} $.\n", .{ ruleDVPair.var1, ruleDVPair.var2 });
+            }
+            std.debug.warn("(end of list)\n", .{});
+            return Error.DVRMissing; // TODO: Test
+        }
+    }
 }
 
 const expect = std.testing.expect;
@@ -504,30 +551,30 @@ test "active DVR (found a memory leak)" {
 }
 
 test "count number of active $d pairs" {
-    var state = try VerifyState.init(std.testing.allocator);
-    defer state.deinit();
+    var iter = try RuleIterator.init(std.testing.allocator);
+    defer iter.deinit();
     var n: usize = 0;
-    try state.addStatementsFrom("$v a b c d e $.");
+    try verifyPart(&iter, "$v a b c d e $.");
 
-    try state.addStatementsFrom("$d $.");
-    expect(state.activeDVPairs.len == n + 0);
-    n = state.activeDVPairs.len;
+    try verifyPart(&iter, "$d $.");
+    expect(iter.activeDVPairs.len == n + 0);
+    n = iter.activeDVPairs.len;
 
-    try state.addStatementsFrom("$d a $.");
-    expect(state.activeDVPairs.len == n + 0);
-    n = state.activeDVPairs.len;
+    try verifyPart(&iter, "$d a $.");
+    expect(iter.activeDVPairs.len == n + 0);
+    n = iter.activeDVPairs.len;
 
-    try state.addStatementsFrom("$d a a $.");
-    expect(state.activeDVPairs.len == n + 1);
-    n = state.activeDVPairs.len;
+    try verifyPart(&iter, "$d a a $.");
+    expect(iter.activeDVPairs.len == n + 1);
+    n = iter.activeDVPairs.len;
 
-    try state.addStatementsFrom("$d a b $.");
-    expect(state.activeDVPairs.len == n + 1);
-    n = state.activeDVPairs.len;
+    try verifyPart(&iter, "$d a b $.");
+    expect(iter.activeDVPairs.len == n + 1);
+    n = iter.activeDVPairs.len;
 
-    try state.addStatementsFrom("$d a b c d e $.");
-    expect(state.activeDVPairs.len == n + 10);
-    n = state.activeDVPairs.len;
+    try verifyPart(&iter, "$d a b c d e $.");
+    expect(iter.activeDVPairs.len == n + 10);
+    n = iter.activeDVPairs.len;
 }
 
 test "$d with constant" {
@@ -555,17 +602,17 @@ test "simplest correct $f" {
 }
 
 test "tokenlist to expression" {
-    var state = try VerifyState.init(std.testing.allocator);
-    defer state.deinit();
-    try state.meanings.put("wff", MeaningType.Constant);
-    try state.meanings.put("ph", Meaning{ .Variable = .{ .usedInFStatement = false } });
+    var iter = try RuleIterator.init(std.testing.allocator);
+    defer iter.deinit();
+    try iter.meanings.put("wff", MeaningType.Constant);
+    try iter.meanings.put("ph", Meaning{ .Variable = .{ .usedInFStatement = false } });
     var tokens = TokenList.init(std.testing.allocator);
     defer tokens.deinit();
     try tokens.push("wff");
     try tokens.push("ph");
     expect(eqs(tokens, &[_]Token{ "wff", "ph" }));
 
-    const expression = try state.expressionOf(tokens);
+    const expression = try iter.expressionOf(tokens);
     defer std.testing.allocator.free(expression);
 
     expect(expression.len == 2);
@@ -592,17 +639,17 @@ test "$v in nested scope" {
 }
 
 test "$v in nested scope, used in $a (use-after-free reproduction)" {
-    var state = try VerifyState.init(std.testing.allocator);
-    defer state.deinit();
+    var iter = try RuleIterator.init(std.testing.allocator);
+    defer iter.deinit();
 
-    try state.addStatementsFrom("$c class setvar $. ${ $v x $. vx.cv $f setvar x $. cv $a class x $.");
-    const cv: InferenceRule = state.meanings.get("cv").?.Rule;
+    try verifyPart(&iter, "$c class setvar $. ${ $v x $. vx.cv $f setvar x $. cv $a class x $.");
+    const cv: InferenceRule = iter.meanings.get("cv").?.Rule;
     const vx_cv: Hypothesis = cv.hypotheses[0];
     const x: Token = vx_cv.expression[1].token;
     expect(eq(x, "x"));
 
-    try state.addStatementsFrom("$}");
-    const cv2: InferenceRule = state.meanings.get("cv").?.Rule;
+    try verifyPart(&iter, "$}");
+    const cv2: InferenceRule = iter.meanings.get("cv").?.Rule;
     const vx_cv2: Hypothesis = cv.hypotheses[0];
     const x2: Token = vx_cv.expression[1].token;
     expect(eq(x2, "x"));
@@ -670,7 +717,7 @@ test "duplicate constant" {
 const MHIterator = struct {
     const Self = @This();
 
-    state: *VerifyState,
+    iter: *RuleIterator,
     allocator: *Allocator,
     mandatoryVariables: TokenSet,
     mhs: SinglyLinkedList(FELabel),
@@ -678,7 +725,7 @@ const MHIterator = struct {
     nextDVPair: usize = 0,
 
     /// expression remains owned by the caller
-    fn init(state: *VerifyState, allocator: *Allocator, expression: Expression) !MHIterator {
+    fn init(iter: *RuleIterator, allocator: *Allocator, expression: Expression) !MHIterator {
         // initially mandatory variables: those from the given expression
         var mandatoryVariables = TokenSet.init(allocator);
         for (expression) |cvToken| if (cvToken.cv == .V) {
@@ -687,12 +734,12 @@ const MHIterator = struct {
 
         var mhs = SinglyLinkedList(FELabel){};
         var len: usize = 0;
-        // loop over state.activeHypotheses, in reverse order
-        var it = state.activeHypotheses.iterator(state.activeHypotheses.count());
+        // loop over iter.activeHypotheses, in reverse order
+        var it = iter.activeHypotheses.iterator(iter.activeHypotheses.count());
         while (it.prev()) |activeHypothesis| {
             switch (activeHypothesis.fe) {
                 .F => {
-                    const fRule = state.meanings.get(activeHypothesis.label).?.Rule;
+                    const fRule = iter.meanings.get(activeHypothesis.label).?.Rule;
                     assert(fRule.conclusion.len == 2);
                     assert(fRule.conclusion[1].cv == .V);
                     const fVariable = fRule.conclusion[1].token;
@@ -711,10 +758,10 @@ const MHIterator = struct {
                     mhs.prepend(node);
                     len += 1;
                     // the variables of the $e hypothesis are also mandatory
-                    const eRule = state.meanings.get(activeHypothesis.label).?.Rule;
+                    const eRule = iter.meanings.get(activeHypothesis.label).?.Rule;
                     const eExpression = eRule.conclusion;
                     for (eExpression) |cvToken| {
-                        if (state.meanings.get(cvToken.token)) |meaning| switch (meaning) {
+                        if (iter.meanings.get(cvToken.token)) |meaning| switch (meaning) {
                             .Variable => _ = try mandatoryVariables.add(cvToken.token),
                             else => {},
                         };
@@ -726,7 +773,7 @@ const MHIterator = struct {
             }
         }
 
-        return MHIterator{ .state = state, .allocator = allocator, .mandatoryVariables = mandatoryVariables, .mhs = mhs, .len = len };
+        return MHIterator{ .iter = iter, .allocator = allocator, .mandatoryVariables = mandatoryVariables, .mhs = mhs, .len = len };
     }
 
     fn deinit(self: *Self) void {
@@ -759,33 +806,33 @@ fn tokenListOf(buffer: []const u8) !TokenList {
     return result;
 }
 
-fn expressionOf(state: *VerifyState, buffer: []const u8) !Expression {
+fn expressionOf(iter: *RuleIterator, buffer: []const u8) !Expression {
     var t = try tokenListOf(buffer);
     defer t.deinit();
-    return try state.expressionOf(t);
+    return try iter.expressionOf(t);
 }
 
 test "iterate over no mandatory hypotheses" {
-    var state = try VerifyState.init(std.testing.allocator);
-    defer state.deinit();
-    try state.addStatementsFrom("$c T $.");
+    var iter = try RuleIterator.init(std.testing.allocator);
+    defer iter.deinit();
+    try verifyPart(&iter, "$c T $.");
 
-    var expression = try expressionOf(&state, "T");
+    var expression = try expressionOf(&iter, "T");
     defer std.testing.allocator.free(expression);
-    var it = try state.mandatoryHypothesesOf(expression);
+    var it = try iter.mandatoryHypothesesOf(expression);
     defer it.deinit();
     assert(it.count() == 0);
     expect(it.next() == null);
 }
 
 test "iterate over single $f hypothesis" {
-    var state = try VerifyState.init(std.testing.allocator);
-    defer state.deinit();
-    try state.addStatementsFrom("$c wff |- $. $v ph ps $. wph $f wff ph $. wps $f wff ps $.");
+    var iter = try RuleIterator.init(std.testing.allocator);
+    defer iter.deinit();
+    try verifyPart(&iter, "$c wff |- $. $v ph ps $. wph $f wff ph $. wps $f wff ps $.");
 
-    var expression = try expressionOf(&state, "|- ph");
+    var expression = try expressionOf(&iter, "|- ph");
     defer std.testing.allocator.free(expression);
-    var it = try state.mandatoryHypothesesOf(expression);
+    var it = try iter.mandatoryHypothesesOf(expression);
     defer it.deinit();
     var item: ?FELabel = null;
     assert(it.count() == 1);
@@ -798,13 +845,13 @@ test "iterate over single $f hypothesis" {
 }
 
 test "iterate with $e hypothesis" {
-    var state = try VerifyState.init(std.testing.allocator);
-    defer state.deinit();
-    try state.addStatementsFrom("$c wff |- $. $v ph ps ta $. wta $f wff ta $. wph $f wff ph $. hyp $e wff ta $.");
+    var iter = try RuleIterator.init(std.testing.allocator);
+    defer iter.deinit();
+    try verifyPart(&iter, "$c wff |- $. $v ph ps ta $. wta $f wff ta $. wph $f wff ph $. hyp $e wff ta $.");
 
-    var expression = try expressionOf(&state, "|- ph");
+    var expression = try expressionOf(&iter, "|- ph");
     defer std.testing.allocator.free(expression);
-    var it = try state.mandatoryHypothesesOf(expression);
+    var it = try iter.mandatoryHypothesesOf(expression);
     defer it.deinit();
     var item: ?FELabel = null;
     assert(it.count() == 3);
@@ -826,13 +873,13 @@ test "iterate with $e hypothesis" {
 }
 
 test "inference rule with $f and $e mandatory hypotheses" {
-    var state = try VerifyState.init(std.testing.allocator);
-    defer state.deinit();
-    try state.addStatementsFrom("$c wff |- $. $v ph ps ta $. wta $f wff ta $. wph $f wff ph $. hyp $e wff ta $.");
+    var iter = try RuleIterator.init(std.testing.allocator);
+    defer iter.deinit();
+    try verifyPart(&iter, "$c wff |- $. $v ph ps ta $. wta $f wff ta $. wph $f wff ph $. hyp $e wff ta $.");
 
-    try state.addStatementsFrom("alltrue $a |- ph $.");
+    try verifyPart(&iter, "alltrue $a |- ph $.");
 
-    const alltrueRule = state.meanings.get("alltrue").?.Rule;
+    const alltrueRule = iter.meanings.get("alltrue").?.Rule;
     expect(alltrueRule.hypotheses.len == 3);
     expect(eq(alltrueRule.hypotheses[1].expression[1].token, "ph"));
     expect(eq(alltrueRule.conclusion[0].token, "|-"));
