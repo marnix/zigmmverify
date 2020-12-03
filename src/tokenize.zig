@@ -4,7 +4,7 @@ const errors = @import("errors.zig");
 const Error = errors.Error;
 
 pub const Token = []const u8;
-pub const TokenList = std.SegmentedList(Token, 0);
+pub const TokenList = std.ArrayList(Token);
 pub const TokenSet = struct {
     const Self = @This();
     map: TokenMap(void),
@@ -92,10 +92,11 @@ pub fn eq(a: Token, b: Token) bool {
 }
 
 pub fn eqs(a: TokenList, b: []const Token) bool {
-    if (a.count() != b.len) return false;
+    // TODO: compare in a simpler way?
+    if (a.items.len != b.len) return false;
     var i: usize = 0;
     while (i < b.len) : (i += 1) {
-        if (!eq(a.at(i).*, b[i])) return false;
+        if (!eq(a.items[i], b[i])) return false;
     }
     return true;
 }
