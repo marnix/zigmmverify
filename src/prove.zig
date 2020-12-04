@@ -1,6 +1,6 @@
 usingnamespace @import("globals.zig");
 
-const SegmentedList = std.SegmentedList;
+const ArrayList = std.ArrayList;
 
 const errors = @import("errors.zig");
 const Error = errors.Error;
@@ -53,17 +53,17 @@ pub fn AsRuleMeaningMap(comptime T: type) type {
 const ProofStack = struct {
     const Self = @This();
     allocator: *Allocator,
-    expressions: std.SegmentedList(Expression, 64),
+    expressions: std.ArrayList(Expression),
     /// we collect these and clean them up at the very end
     arena: std.heap.ArenaAllocator,
-    dvPairs: std.SegmentedList(DVPair, 16),
+    dvPairs: std.ArrayList(DVPair),
 
     fn init(allocator: *Allocator) Self {
         return ProofStack{
             .allocator = allocator,
-            .expressions = std.SegmentedList(Expression, 64).init(allocator),
+            .expressions = std.ArrayList(Expression).init(allocator),
             .arena = std.heap.ArenaAllocator.init(allocator),
-            .dvPairs = std.SegmentedList(DVPair, 16).init(allocator),
+            .dvPairs = std.ArrayList(DVPair).init(allocator),
         };
     }
     fn deinit(self: *Self) void {
@@ -73,17 +73,17 @@ const ProofStack = struct {
     }
 
     fn isEmpty(self: *Self) bool {
-        return self.expressions.len == 0;
+        return self.expressions.items.len == 0;
     }
     fn isSingle(self: *Self) bool {
-        return self.expressions.len == 1;
+        return self.expressions.items.len == 1;
     }
     fn top(self: *Self) Expression {
-        return self.expressions.at(self.expressions.len - 1).*;
+        return self.expressions.items[self.expressions.items.len - 1];
     }
 
     fn pushExpression(self: *Self, expression: Expression) !void {
-        try self.expressions.push(expression);
+        try self.expressions.append(expression);
     }
     fn pushInferenceRule(self: *Self, rule: InferenceRule) !void {
         const nrHyp = rule.hypotheses.len;
@@ -94,7 +94,7 @@ const ProofStack = struct {
         {
             var j: usize = nrHyp;
             while (j > 0) : (j -= 1) {
-                hypotheses[j - 1] = self.expressions.pop() orelse return Error.Incomplete; // TODO: test
+                hypotheses[j - 1] = self.expressions.popOrNull() orelse return Error.Incomplete; // TODO: test
             }
         }
 
@@ -136,7 +136,7 @@ const ProofStack = struct {
             for (expr1) |cvToken1| if (cvToken1.cv == .V) {
                 for (expr2) |cvToken2| if (cvToken2.cv == .V) {
                     // note: don't try to check for duplicates, that is probably not worth it
-                    try self.dvPairs.push(.{ .var1 = cvToken1.token, .var2 = cvToken2.token });
+                    try self.dvPairs.append(.{ .var1 = cvToken1.token, .var2 = cvToken2.token });
                 };
             };
         }
@@ -148,7 +148,7 @@ const ProofStack = struct {
 
 pub const RunProofResult = struct {
     expression: Expression,
-    dvPairs: std.SegmentedList(DVPair, 16),
+    dvPairs: std.ArrayList(DVPair),
 
     pub fn deinit(self: *@This(), allocator: *Allocator) void {
         allocator.free(self.expression);
@@ -168,16 +168,15 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
     var compressedNumber: usize = 0;
     var compressedLabels = TokenList.init(allocator);
     defer compressedLabels.deinit();
-    var markedExpressions = std.SegmentedList(Expression, 32).init(allocator);
+    var markedExpressions = std.ArrayList(Expression).init(allocator);
     defer markedExpressions.deinit();
 
-    var it = @as(TokenList, proof).iterator(0);
-    while (it.next()) |t| {
+    for (proof.items) |t| {
         var reprocessCurrentToken = false;
         while (true) {
             switch (mode) {
                 .Initial => {
-                    if (eq(t.*, "(")) {
+                    if (eq(t, "(")) {
                         mode = .CompressedPart1;
                     } else {
                         mode = .Uncompressed;
@@ -185,18 +184,18 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                     }
                 },
                 .Uncompressed => {
-                    try proofStack.pushInferenceRule(try ruleMeaningMap.get(t.*));
+                    try proofStack.pushInferenceRule(try ruleMeaningMap.get(t));
                 },
                 .CompressedPart1 => {
-                    if (eq(t.*, ")")) {
+                    if (eq(t, ")")) {
                         mode = .CompressedPart2;
                     } else {
-                        try compressedLabels.push(t.*);
+                        try compressedLabels.append(t);
                     }
                 },
                 .CompressedPart2 => {
-                    for (t.*) |c| {
-                        // handle every character of t.*, building numbers
+                    for (t) |c| {
+                        // handle every character of t, building numbers
                         if ('U' <= c and c <= 'Y') {
                             compressedNumber = compressedNumber * 5 + (c - 'U' + 1);
                             // number is still incomplete
@@ -213,13 +212,13 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                                 }
                                 i -= hypotheses.len;
                                 // ...labels between parentheses...
-                                if (i < compressedLabels.len) {
-                                    break :brk try proofStack.pushInferenceRule(try ruleMeaningMap.get(compressedLabels.at(i).*));
+                                if (i < compressedLabels.items.len) {
+                                    break :brk try proofStack.pushInferenceRule(try ruleMeaningMap.get(compressedLabels.items[i]));
                                 }
-                                i -= compressedLabels.len;
+                                i -= compressedLabels.items.len;
                                 // ...expressions marked with 'Z'...
-                                if (i < markedExpressions.len) {
-                                    break :brk try proofStack.pushExpression(markedExpressions.at(i).*);
+                                if (i < markedExpressions.items.len) {
+                                    break :brk try proofStack.pushExpression(markedExpressions.items[i]);
                                 }
                                 // ...or larger than expected.
                                 return Error.NumberTooLarge; // TODO: test
@@ -229,7 +228,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                             // special case: not a number, but a back reference
                             if (compressedNumber != 0) return Error.NumberIncomplete; // 'Z' in the middle of a number, TODO: test
                             if (proofStack.isEmpty()) return Error.NumberZEarly; // 'Z' with empty proof stack, at the very beginning, TODO: test
-                            try markedExpressions.push(proofStack.top());
+                            try markedExpressions.append(proofStack.top());
                         }
                     }
                 },
@@ -251,23 +250,22 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
 
 /// caller becomes owner of allocated result
 fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Expression {
-    var resultAsList = SegmentedList(verify.CVToken, 128).init(allocator);
+    var resultAsList = ArrayList(verify.CVToken).init(allocator);
     defer resultAsList.deinit();
     for (orig) |cvToken| {
         if (subst.get(cvToken.token)) |repl| {
             if (cvToken.cv != .V) return Error.UnexpectedToken; // TODO: test
             for (repl) |replCVToken| {
-                try resultAsList.push(replCVToken);
+                try resultAsList.append(replCVToken);
             }
         } else {
-            try resultAsList.push(cvToken);
+            try resultAsList.append(cvToken);
         }
     }
 
-    var result = try allocator.alloc(verify.CVToken, resultAsList.len);
-    var it = resultAsList.iterator(0);
-    var i: usize = 0;
-    while (it.next()) |pCVToken| : (i += 1) result[i] = pCVToken.*;
+    var result = try allocator.alloc(verify.CVToken, resultAsList.items.len);
+    // TODO: copy in a simpler way?
+    for (resultAsList.items) |cvToken, i| result[i] = cvToken;
     return result;
 }
 
