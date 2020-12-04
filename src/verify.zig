@@ -30,9 +30,9 @@ fn sliceCopy(comptime T: type, allocator: *Allocator, original: []const T) ![]co
 
 const SinglyLinkedList = std.SinglyLinkedList;
 const FELabel = struct { label: Token, fe: enum { F, E } };
-const FELabelList = std.SegmentedList(FELabel, 0);
+const FELabelList = std.ArrayList(FELabel);
 pub const DVPair = struct { var1: Token, var2: Token };
-const DVPairList = std.SegmentedList(DVPair, 0);
+const DVPairList = std.ArrayList(DVPair);
 
 pub const CVToken = struct { token: Token, cv: enum { C, V } };
 pub const Expression = []const CVToken;
@@ -170,7 +170,7 @@ const RuleIterator = struct {
         self.meanings.deinit();
     }
 
-    pub fn addStatementsFrom(self: *Self, buffer: []const u8, batch: anytype, frameAllocator: anytype) !void {
+    pub fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
         self.statements = StatementIterator.init(self.allocator, buffer);
     }
 
@@ -197,32 +197,30 @@ const RuleIterator = struct {
         switch (statement.*) {
             .C => |cStatement| {
                 if (self.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
-                var it = @as(TokenList, cStatement.constants).iterator(0);
-                while (it.next()) |constant| {
-                    if (self.meanings.get(constant.*)) |_| return Error.Duplicate;
-                    const kv = try self.meanings.put(constant.*, MeaningType.Constant);
+                for (cStatement.constants.items) |constant| {
+                    if (self.meanings.get(constant)) |_| return Error.Duplicate;
+                    const kv = try self.meanings.put(constant, MeaningType.Constant);
                 }
             },
             .V => |vStatement| {
-                var it = @as(TokenList, vStatement.variables).iterator(0); // TODO: why coercion needed??
-                while (it.next()) |variable| {
-                    if (self.meanings.get(variable.*)) |_| return Error.Duplicate;
-                    const kv = try self.meanings.put(variable.*, Meaning{ .Variable = .{ .usedInFStatement = false } });
+                for (vStatement.variables.items) |variable| {
+                    if (self.meanings.get(variable)) |_| return Error.Duplicate;
+                    const kv = try self.meanings.put(variable, Meaning{ .Variable = .{ .usedInFStatement = false } });
                     if (self.currentScopeDiff) |scopeDiff| {
-                        _ = try scopeDiff.activeTokens.add(variable.*); // this $v will become inactive at the next $}
+                        _ = try scopeDiff.activeTokens.add(variable); // this $v will become inactive at the next $}
                     }
                 }
             },
             .F => |fStatement| {
                 if (self.meanings.get(fStatement.label)) |_| return Error.Duplicate;
                 try self.meanings.put(fStatement.label, Meaning{ .Rule = try self.fromHypothesis(fStatement.tokens) });
-                const variable = fStatement.tokens.at(1).*;
+                const variable = fStatement.tokens.items[1];
                 if (self.meanings.get(variable)) |meaning| {
                     if (meaning != .Variable) return Error.UnexpectedToken; // $f k l $. where l is something else than variable,
                     if (meaning.Variable.usedInFStatement) return Error.Duplicate;
                 } else unreachable; // $f k x $. without $v x $. is already detected in fromHypothesis() call above
                 try self.meanings.put(variable, .{ .Variable = .{ .usedInFStatement = true } });
-                _ = try self.activeHypotheses.push(.{ .label = fStatement.label, .fe = .F });
+                _ = try self.activeHypotheses.append(.{ .label = fStatement.label, .fe = .F });
                 if (self.currentScopeDiff) |scopeDiff| {
                     scopeDiff.nrActiveHypotheses += 1;
                     _ = try scopeDiff.activeTokens.add(fStatement.label); // this $f will become inactive at the next $}
@@ -233,7 +231,7 @@ const RuleIterator = struct {
             .E => |eStatement| {
                 if (self.meanings.get(eStatement.label)) |_| return Error.Duplicate;
                 try self.meanings.put(eStatement.label, Meaning{ .Rule = try self.fromHypothesis(eStatement.tokens) });
-                _ = try self.activeHypotheses.push(.{ .label = eStatement.label, .fe = .E });
+                _ = try self.activeHypotheses.append(.{ .label = eStatement.label, .fe = .E });
                 if (self.currentScopeDiff) |scopeDiff| {
                     scopeDiff.nrActiveHypotheses += 1;
                     _ = try scopeDiff.activeTokens.add(eStatement.label); // this $e will become inactive at the next $}
@@ -255,17 +253,14 @@ const RuleIterator = struct {
                 nextItem = .{ .label = label, .rule = rule, .proof = proof };
             },
             .D => |dStatement| {
-                var it1 = @as(TokenList, dStatement.variables).iterator(0);
-                var i: usize = 0;
-                while (it1.next()) |pVar1| : (i += 1) {
-                    if (self.meanings.get(pVar1.*)) |meaning| {
+                for (dStatement.variables.items) |var1, i| {
+                    if (self.meanings.get(var1)) |meaning| {
                         if (meaning != .Variable) return Error.UnexpectedToken; // TODO: test
                     } else return Error.UnexpectedToken; //TODO: test
                     // ...
-                    var it2 = @as(TokenList, dStatement.variables).iterator(i + 1);
-                    while (it2.next()) |pVar2| {
+                    for (dStatement.variables.items[i + 1 ..]) |var2| {
                         // TODO: error if var1 == var2
-                        _ = try self.activeDVPairs.push(.{ .var1 = pVar1.*, .var2 = pVar2.* });
+                        _ = try self.activeDVPairs.append(.{ .var1 = var1, .var2 = var2 });
                         if (self.currentScopeDiff) |scopeDiff| {
                             scopeDiff.nrActiveDVPairs += 1;
                         }
@@ -299,11 +294,10 @@ const RuleIterator = struct {
         var it = try self.mandatoryHypothesesOf(conclusion);
         defer it.deinit();
 
-        var dvPairs = try self.allocator.alloc(DVPair, self.activeDVPairs.len);
-        var j: usize = 0;
-        var it2 = self.activeDVPairs.iterator(0);
-        while (it2.next()) |dvPair| : (j += 1) {
-            dvPairs[j] = dvPair.*;
+        // TODO: copy in a simpler way?
+        var dvPairs = try self.allocator.alloc(DVPair, self.activeDVPairs.items.len);
+        for (self.activeDVPairs.items) |dvPair, j| {
+            dvPairs[j] = dvPair;
         }
 
         var hypotheses = try self.allocator.alloc(Hypothesis, it.count());
@@ -340,14 +334,12 @@ const RuleIterator = struct {
 
     /// caller gets ownership of result, needs to hand back to us to be freed by our allocator
     fn expressionOf(self: *Self, tokens: TokenList) !Expression {
-        var result = try self.allocator.alloc(CVToken, tokens.count());
+        var result = try self.allocator.alloc(CVToken, tokens.items.len);
         errdefer self.allocator.free(result);
-        var i: usize = 0;
-        var it = @as(TokenList, tokens).iterator(0);
-        while (it.next()) |pToken| : (i += 1) {
-            const cv = self.meanings.get(pToken.*) orelse return Error.UnexpectedToken;
+        for (tokens.items) |token, i| {
+            const cv = self.meanings.get(token) orelse return Error.UnexpectedToken;
             result[i] = .{
-                .token = pToken.*,
+                .token = token,
                 .cv = switch (cv) {
                     .Constant => .C,
                     .Variable => .V,
@@ -450,7 +442,7 @@ fn verifyPart(iter: *RuleIterator, buffer: []const u8) !void {
 
     var batch = std.event.Batch(anyerror!void, 1000, .auto_async).init();
 
-    try iter.addStatementsFrom(buffer, &batch, frameAllocator);
+    try iter.addStatementsFrom(buffer);
     while (try iter.next()) |*item| {
         defer item.deinit();
         if (item.proof) |proof| {
@@ -482,8 +474,7 @@ fn verifyProofConclusion(self: *RuleIterator, label: []const u8, proof: TokenLis
     if (!eqExpr(result.expression, conclusion.expression)) return Error.ResultMismatch;
 
     // if not(every result.dvPairs is in conclusion.dvPairs) return Error.DVRMissing;
-    var it = result.dvPairs.iterator(0);
-    while (it.next()) |proofDVPair| {
+    for (result.dvPairs.items) |proofDVPair| {
         for (conclusion.dvPairs) |ruleDVPair| {
             if ((eq(proofDVPair.var1, ruleDVPair.var1) and eq(proofDVPair.var2, ruleDVPair.var2)) or
                 (eq(proofDVPair.var1, ruleDVPair.var2) and eq(proofDVPair.var2, ruleDVPair.var1)))
@@ -557,24 +548,24 @@ test "count number of active $d pairs" {
     try verifyPart(&iter, "$v a b c d e $.");
 
     try verifyPart(&iter, "$d $.");
-    expect(iter.activeDVPairs.len == n + 0);
-    n = iter.activeDVPairs.len;
+    expect(iter.activeDVPairs.items.len == n + 0);
+    n = iter.activeDVPairs.items.len;
 
     try verifyPart(&iter, "$d a $.");
-    expect(iter.activeDVPairs.len == n + 0);
-    n = iter.activeDVPairs.len;
+    expect(iter.activeDVPairs.items.len == n + 0);
+    n = iter.activeDVPairs.items.len;
 
     try verifyPart(&iter, "$d a a $.");
-    expect(iter.activeDVPairs.len == n + 1);
-    n = iter.activeDVPairs.len;
+    expect(iter.activeDVPairs.items.len == n + 1);
+    n = iter.activeDVPairs.items.len;
 
     try verifyPart(&iter, "$d a b $.");
-    expect(iter.activeDVPairs.len == n + 1);
-    n = iter.activeDVPairs.len;
+    expect(iter.activeDVPairs.items.len == n + 1);
+    n = iter.activeDVPairs.items.len;
 
     try verifyPart(&iter, "$d a b c d e $.");
-    expect(iter.activeDVPairs.len == n + 10);
-    n = iter.activeDVPairs.len;
+    expect(iter.activeDVPairs.items.len == n + 10);
+    n = iter.activeDVPairs.items.len;
 }
 
 test "$d with constant" {
@@ -608,8 +599,8 @@ test "tokenlist to expression" {
     try iter.meanings.put("ph", Meaning{ .Variable = .{ .usedInFStatement = false } });
     var tokens = TokenList.init(std.testing.allocator);
     defer tokens.deinit();
-    try tokens.push("wff");
-    try tokens.push("ph");
+    try tokens.append("wff");
+    try tokens.append("ph");
     expect(eqs(tokens, &[_]Token{ "wff", "ph" }));
 
     const expression = try iter.expressionOf(tokens);
@@ -735,8 +726,11 @@ const MHIterator = struct {
         var mhs = SinglyLinkedList(FELabel){};
         var len: usize = 0;
         // loop over iter.activeHypotheses, in reverse order
-        var it = iter.activeHypotheses.iterator(iter.activeHypotheses.count());
-        while (it.prev()) |activeHypothesis| {
+        var i: usize = iter.activeHypotheses.items.len;
+        while (i > 0) {
+            i -= 1;
+            const activeHypothesis = iter.activeHypotheses.items[i];
+
             switch (activeHypothesis.fe) {
                 .F => {
                     const fRule = iter.meanings.get(activeHypothesis.label).?.Rule;
@@ -800,7 +794,7 @@ fn tokenListOf(buffer: []const u8) !TokenList {
     var result = TokenList.init(std.testing.allocator);
     while (true) {
         if (try it.nextToken()) |token| {
-            _ = try result.push(token);
+            _ = try result.append(token);
         } else break;
     }
     return result;

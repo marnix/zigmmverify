@@ -93,8 +93,8 @@ pub const StatementIterator = struct {
                 const label = optLabel orelse return Error.MissingLabel;
                 var tokens = try self.nextUntil("$.");
                 errdefer tokens.deinit();
-                if (tokens.count() < 2) return Error.Incomplete;
-                if (tokens.count() > 2) return Error.UnexpectedToken;
+                if (tokens.items.len < 2) return Error.Incomplete;
+                if (tokens.items.len > 2) return Error.UnexpectedToken;
                 result = try self.statement(.{
                     .F = .{
                         .label = label,
@@ -164,7 +164,7 @@ pub const StatementIterator = struct {
         while (true) {
             const token = (try self.nextToken()) orelse return Error.Incomplete;
             if (eq(token, terminator)) break;
-            _ = try result.push(token);
+            _ = try result.append(token);
         }
         return result;
     }
