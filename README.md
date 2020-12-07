@@ -27,11 +27,7 @@ Build using zig 0.6.0, then just run the resulting binary.
 
 - Verify that 'normal' tokens don't start with `$`.
 
-- Split `rule.zig` (which just iterates over all inference rules, renaming `VerifyState`?)
-  off of `verify.zig`, so that
-  the latter can verify proofs using a new `prove.zig`.
-
-- Clean-up / refactor VerifyState + ScopeDiff:
+- Clean-up / refactor RuleIterator + ScopeDiff:
   Add methods, move functionality between these structs.
   Also encapsulate some parts.
   Also try to avoid duplication in statement handling.
