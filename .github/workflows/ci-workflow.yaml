@@ -1,4 +1,4 @@
-name: Build with zig 0.7.0
+name: Build with zig 0.7.x
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.7.0
+          version: 0.7.1
       - run: |
           wget --quiet https://github.com/metamath/set.mm/raw/develop/set.mm --output-document set.mm && zig build && time zig-cache/bin/zigmmverify
   lint:
@@ -22,5 +22,5 @@ jobs:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.7.0
+          version: 0.7.1
       - run: zig fmt --check build.zig src/*.zig
