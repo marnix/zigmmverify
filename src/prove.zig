@@ -11,13 +11,14 @@ const TokenList = tokenize.TokenList;
 const TokenMap = tokenize.TokenMap;
 const eq = tokenize.eq;
 
-const verify = @import("verify.zig");
-const Expression = verify.Expression;
-const eqExpr = verify.eqExpr;
-const copyExpression = verify.copyExpression;
-const DVPair = verify.DVPair;
-const Hypothesis = verify.Hypothesis;
-const InferenceRule = verify.InferenceRule;
+const compose = @import("compose.zig");
+const Expression = compose.Expression;
+const eqExpr = compose.eqExpr;
+const copyExpression = compose.copyExpression;
+const DVPair = compose.DVPair;
+const Hypothesis = compose.Hypothesis;
+const InferenceRule = compose.InferenceRule;
+const RuleIterator = compose.RuleIterator;
 
 // TODO: move to new utils.zig?
 fn assertCoercible(comptime T: type, comptime U: type) void {
@@ -26,29 +27,6 @@ fn assertCoercible(comptime T: type, comptime U: type) void {
 }
 
 const Substitution = TokenMap(Expression);
-
-/// A 'rule meaning map' is an instance of a struct with
-/// an fn called `get` that takes a Token and returns InferenceRule (or an error).
-fn assertIsRuleMeaningMap(map: anytype) void {
-    comptime const typeOfFnGet = @typeInfo(@TypeOf(map.get)).BoundFn;
-    assert(typeOfFnGet.args.len == 2);
-    assertCoercible(Token, typeOfFnGet.args[1].arg_type.?);
-    assertCoercible(typeOfFnGet.return_type.?, anyerror!InferenceRule);
-}
-
-/// A wrapper around a value of type `T` and a `getter: fn (T, Token) anyerror!InferenceRule`,
-/// which satisfies `assertIsRuleMeaningMap()`.
-pub fn AsRuleMeaningMap(comptime T: type) type {
-    return struct {
-        const Self = @This();
-
-        child: T,
-        getter: fn (T, Token) anyerror!InferenceRule,
-        fn get(self: Self, token: Token) anyerror!InferenceRule {
-            return (self.getter)(self.child, token);
-        }
-    };
-}
 
 const ProofStack = struct {
     const Self = @This();
@@ -157,9 +135,7 @@ pub const RunProofResult = struct {
 };
 
 /// caller becomes owner of allocated result
-pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anytype, allocator: *Allocator) !RunProofResult {
-    assertIsRuleMeaningMap(ruleMeaningMap);
-
+pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleIterator: *RuleIterator, allocator: *Allocator) !RunProofResult {
     const Modes = enum { Initial, Uncompressed, CompressedPart1, CompressedPart2 };
     var mode = Modes.Initial;
 
@@ -184,7 +160,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                     }
                 },
                 .Uncompressed => {
-                    try proofStack.pushInferenceRule(try ruleMeaningMap.get(t));
+                    try proofStack.pushInferenceRule(try ruleIterator.getRuleMeaningOf(t));
                 },
                 .CompressedPart1 => {
                     if (eq(t, ")")) {
@@ -213,7 +189,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                                 i -= hypotheses.len;
                                 // ...labels between parentheses...
                                 if (i < compressedLabels.items.len) {
-                                    break :brk try proofStack.pushInferenceRule(try ruleMeaningMap.get(compressedLabels.items[i]));
+                                    break :brk try proofStack.pushInferenceRule(try ruleIterator.getRuleMeaningOf(compressedLabels.items[i]));
                                 }
                                 i -= compressedLabels.items.len;
                                 // ...expressions marked with 'Z'...
@@ -250,7 +226,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
 
 /// caller becomes owner of allocated result
 fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Expression {
-    var resultAsList = ArrayList(verify.CVToken).init(allocator);
+    var resultAsList = ArrayList(compose.CVToken).init(allocator);
     defer resultAsList.deinit();
     for (orig) |cvToken| {
         if (subst.get(cvToken.token)) |repl| {
@@ -263,7 +239,7 @@ fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Exp
         }
     }
 
-    var result = try allocator.alloc(verify.CVToken, resultAsList.items.len);
+    var result = try allocator.alloc(compose.CVToken, resultAsList.items.len);
     // TODO: copy in a simpler way?
     for (resultAsList.items) |cvToken, i| result[i] = cvToken;
     return result;
@@ -274,30 +250,30 @@ fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Exp
 const expect = std.testing.expect;
 
 test "simple substitution" {
-    const original = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const original = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
     var substitution = Substitution.init(std.testing.allocator);
     defer substitution.deinit();
-    _ = try substitution.put("x", &[_]verify.CVToken{.{ .token = "y", .cv = .V }});
-    const expected = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "y", .cv = .V } };
+    _ = try substitution.put("x", &[_]compose.CVToken{.{ .token = "y", .cv = .V }});
+    const expected = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "y", .cv = .V } };
     const actual = try substitute(original, substitution, std.testing.allocator);
     defer std.testing.allocator.free(actual);
     expect(eqExpr(actual, expected));
 }
 
 test "compare equal expressions" {
-    const a = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
-    const b = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const a = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const b = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
     expect(eqExpr(a, b));
 }
 
 test "compare unequal expressions" {
-    const a = &[_]verify.CVToken{ .{ .token = "a", .cv = .C }, .{ .token = "x", .cv = .V } };
-    const b = &[_]verify.CVToken{ .{ .token = "b", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const a = &[_]compose.CVToken{ .{ .token = "a", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const b = &[_]compose.CVToken{ .{ .token = "b", .cv = .C }, .{ .token = "x", .cv = .V } };
     expect(!eqExpr(a, b));
 }
 
 test "compare unequal expressions, constant vs variable" {
-    const a = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
-    const b = &[_]verify.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .C } };
+    const a = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
+    const b = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .C } };
     expect(!eqExpr(a, b));
 }

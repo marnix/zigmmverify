@@ -8,10 +8,7 @@ pub fn build(b: *Builder) void {
     exe.setBuildMode(mode);
     exe.setTarget(target);
 
-    // separately testing parts that are not yet used from main.zig
-    exe.step.dependOn(&(b.addTest("src/prove.zig")).step);
-
-    exe.step.dependOn(&(b.addTest("src/main.zig")).step);
+    exe.step.dependOn(&(b.addTest("src/alltests.zig")).step);
 
     b.default_step.dependOn(&exe.step);
 
