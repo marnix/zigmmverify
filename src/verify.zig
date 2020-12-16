@@ -21,11 +21,7 @@ pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
     errdefer |err| std.debug.warn("\nError {0} happened...\n", .{err});
     var iter = try RuleIterator.init(allocator);
     defer iter.deinit();
-    try verifyPart(&iter, buffer);
-    if (iter.currentScopeDiff) |_| return Error.Incomplete; // unclosed $}
-}
 
-fn verifyPart(iter: *RuleIterator, buffer: []const u8) !void {
     var frameArena = std.heap.ArenaAllocator.init(iter.allocator);
     defer frameArena.deinit();
     const frameAllocator = &frameArena.allocator;
@@ -43,7 +39,7 @@ fn verifyPart(iter: *RuleIterator, buffer: []const u8) !void {
             const rule = item.rule;
             std.event.Loop.startCpuBoundOperation();
             const frame = try frameAllocator.create(@Frame(verifyProofConclusion));
-            frame.* = async verifyProofConclusion(iter, item.label, proof, rule.hypotheses, .{
+            frame.* = async verifyProofConclusion(&iter, item.label, proof, rule.hypotheses, .{
                 .expression = rule.conclusion,
                 .dvPairs = rule.activeDVPairs,
             });
@@ -52,6 +48,8 @@ fn verifyPart(iter: *RuleIterator, buffer: []const u8) !void {
     }
 
     try batch.wait();
+
+    if (iter.currentScopeDiff) |_| return Error.Incomplete; // unclosed $}
 }
 
 fn verifyProofConclusion(iter: *RuleIterator, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: struct {
