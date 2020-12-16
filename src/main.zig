@@ -9,7 +9,17 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = &arena.allocator;
 
-    const mm_file = try std.fs.cwd().openFile("set.mm", .{});
+    const fileName = fileName: {
+        var argIter = std.process.args();
+        _ = argIter.nextPosix().?; // skip command name, is always present
+        if (argIter.nextPosix()) |fileName| {
+            break :fileName fileName;
+        } else {
+            return error.SingleCommandLineArgumentExpected;
+        }
+    };
+
+    const mm_file = try std.fs.cwd().openFile(fileName, .{});
     defer mm_file.close();
     const size = (try mm_file.stat()).size;
     const mm_buffer = try allocator.alloc(u8, size);
