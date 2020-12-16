@@ -169,6 +169,7 @@ pub const RuleIterator = struct {
     }
 
     pub fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
+        assert(self.statements == null);
         self.statements = StatementIterator.init(self.allocator, buffer);
     }
 
