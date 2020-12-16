@@ -39,6 +39,12 @@ pub const Statement = union(StatementType) {
         }
         allocator.destroy(self);
     }
+
+    pub fn deinitLeavingProof(self: *Statement, allocator: *Allocator) TokenList {
+        defer allocator.destroy(self);
+        self.*.P.tokens.deinit();
+        return self.*.P.proof;
+    }
 };
 
 pub const StatementIterator = struct {
