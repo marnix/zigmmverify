@@ -14,9 +14,6 @@ const parse = @import("parse.zig");
 const Statement = parse.Statement;
 const StatementIterator = parse.StatementIterator;
 
-const prove = @import("prove.zig");
-const AsRuleMeaningMap = prove.AsRuleMeaningMap;
-
 pub fn copyExpression(allocator: *Allocator, original: Expression) !Expression {
     return try sliceCopy(CVToken, allocator, original);
 }
@@ -282,7 +279,6 @@ pub const RuleIterator = struct {
     }
 
     /// caller does not get ownership
-    /// (should not need to be public! TODO: fix)
     pub fn getRuleMeaningOf(self: *Self, token: Token) !InferenceRule {
         switch (self.meanings.get(token) orelse return Error.UnexpectedToken) { //TODO: test
             .Rule => |rule| return rule,

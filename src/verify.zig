@@ -54,15 +54,14 @@ fn verifyPart(iter: *RuleIterator, buffer: []const u8) !void {
     try batch.wait();
 }
 
-fn verifyProofConclusion(self: *RuleIterator, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: struct {
+fn verifyProofConclusion(iter: *RuleIterator, label: []const u8, proof: TokenList, hypotheses: []Hypothesis, conclusion: struct {
     expression: Expression,
     dvPairs: []DVPair,
 }) anyerror!void {
     // std.debug.warn("\nstarting to verify proof of {0}.\n", .{label});
     // defer std.debug.warn("end of verify proof of {0}.\n", .{label});
-    const selfAsRuleMeaningMap = prove.AsRuleMeaningMap(*RuleIterator){ .child = self, .getter = RuleIterator.getRuleMeaningOf };
-    var result = try prove.runProof(proof, hypotheses, selfAsRuleMeaningMap, self.allocator);
-    defer result.deinit(self.allocator);
+    var result = try prove.runProof(proof, hypotheses, iter, iter.allocator);
+    defer result.deinit(iter.allocator);
 
     if (!eqExpr(result.expression, conclusion.expression)) return Error.ResultMismatch;
 

@@ -18,6 +18,7 @@ const copyExpression = compose.copyExpression;
 const DVPair = compose.DVPair;
 const Hypothesis = compose.Hypothesis;
 const InferenceRule = compose.InferenceRule;
+const RuleIterator = compose.RuleIterator;
 
 // TODO: move to new utils.zig?
 fn assertCoercible(comptime T: type, comptime U: type) void {
@@ -26,29 +27,6 @@ fn assertCoercible(comptime T: type, comptime U: type) void {
 }
 
 const Substitution = TokenMap(Expression);
-
-/// A 'rule meaning map' is an instance of a struct with
-/// an fn called `get` that takes a Token and returns InferenceRule (or an error).
-fn assertIsRuleMeaningMap(map: anytype) void {
-    comptime const typeOfFnGet = @typeInfo(@TypeOf(map.get)).BoundFn;
-    assert(typeOfFnGet.args.len == 2);
-    assertCoercible(Token, typeOfFnGet.args[1].arg_type.?);
-    assertCoercible(typeOfFnGet.return_type.?, anyerror!InferenceRule);
-}
-
-/// A wrapper around a value of type `T` and a `getter: fn (T, Token) anyerror!InferenceRule`,
-/// which satisfies `assertIsRuleMeaningMap()`.
-pub fn AsRuleMeaningMap(comptime T: type) type {
-    return struct {
-        const Self = @This();
-
-        child: T,
-        getter: fn (T, Token) anyerror!InferenceRule,
-        fn get(self: Self, token: Token) anyerror!InferenceRule {
-            return (self.getter)(self.child, token);
-        }
-    };
-}
 
 const ProofStack = struct {
     const Self = @This();
@@ -157,9 +135,7 @@ pub const RunProofResult = struct {
 };
 
 /// caller becomes owner of allocated result
-pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anytype, allocator: *Allocator) !RunProofResult {
-    assertIsRuleMeaningMap(ruleMeaningMap);
-
+pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleIterator: *RuleIterator, allocator: *Allocator) !RunProofResult {
     const Modes = enum { Initial, Uncompressed, CompressedPart1, CompressedPart2 };
     var mode = Modes.Initial;
 
@@ -184,7 +160,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                     }
                 },
                 .Uncompressed => {
-                    try proofStack.pushInferenceRule(try ruleMeaningMap.get(t));
+                    try proofStack.pushInferenceRule(try ruleIterator.getRuleMeaningOf(t));
                 },
                 .CompressedPart1 => {
                     if (eq(t, ")")) {
@@ -213,7 +189,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleMeaningMap: anyt
                                 i -= hypotheses.len;
                                 // ...labels between parentheses...
                                 if (i < compressedLabels.items.len) {
-                                    break :brk try proofStack.pushInferenceRule(try ruleMeaningMap.get(compressedLabels.items[i]));
+                                    break :brk try proofStack.pushInferenceRule(try ruleIterator.getRuleMeaningOf(compressedLabels.items[i]));
                                 }
                                 i -= compressedLabels.items.len;
                                 // ...expressions marked with 'Z'...
