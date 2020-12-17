@@ -15,7 +15,7 @@ jobs:
         with:
           version: 0.7.1
       - run: |
-          wget --quiet https://github.com/metamath/set.mm/raw/develop/set.mm --output-document set.mm && zig build && time zig-cache/bin/zigmmverify
+          wget --quiet https://github.com/metamath/set.mm/raw/develop/set.mm --output-document set.mm && zig build && time zig-cache/bin/zigmmverify set.mm
   lint:
     runs-on: ubuntu-latest
     steps:
