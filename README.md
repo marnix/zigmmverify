@@ -14,14 +14,15 @@ and modules.
 
 # How to build and run
 
-Get set.mm from metamath.org or GitHub, or download an older version like so:
-```
-wget https://github.com/metamath/set.mm/raw/b0925f0afd5963577ea76b252cb6613c885b393d/set.mm -O set.mm
-```
+Build using Zig 0.7.1, then just run the resulting binary,
+passing a single .mm file on the command line.
 
-For now, set.mm is hardcoded and must be in the current directory.
-
-Build using zig 0.6.0, then just run the resulting binary.
+For example, use set.mm, which you can get from metamath.org,
+or download the most recent version
+directly from https://github.com/metamath/set.mm like so:
+```
+wget https://github.com/metamath/set.mm/raw/develop/set.mm -O set.mm
+```
 
 # Next tasks
 
