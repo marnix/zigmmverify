@@ -56,8 +56,8 @@ fn verifyProofConclusion(iter: *RuleIterator, label: []const u8, proof: TokenLis
     expression: Expression,
     dvPairs: []DVPair,
 }) anyerror!void {
-    // std.debug.warn("\nstarting to verify proof of {0}.\n", .{label});
-    // defer std.debug.warn("end of verify proof of {0}.\n", .{label});
+    // std.debug.warn("\nstarting to verify proof of {0s}.\n", .{label});
+    // defer std.debug.warn("end of verify proof of {0s}.\n", .{label});
     var result = try prove.runProof(proof, hypotheses, iter, iter.allocator);
     defer result.deinit(iter.allocator);
 
@@ -74,9 +74,9 @@ fn verifyProofConclusion(iter: *RuleIterator, label: []const u8, proof: TokenLis
             }
         } else {
             // proofDVPair is not declared in any active $d statement
-            std.debug.warn("$d {0} {1} $. expected but not found in the following list:\n", .{ proofDVPair.var1, proofDVPair.var2 });
+            std.debug.warn("$d {0s} {1s} $. expected but not found in the following list:\n", .{ proofDVPair.var1, proofDVPair.var2 });
             for (conclusion.dvPairs) |ruleDVPair| {
-                std.debug.warn("   $d {0} {1} $.\n", .{ ruleDVPair.var1, ruleDVPair.var2 });
+                std.debug.warn("   $d {0s} {1s} $.\n", .{ ruleDVPair.var1, ruleDVPair.var2 });
             }
             std.debug.warn("(end of list)\n", .{});
             return Error.DVRMissing; // TODO: Test
