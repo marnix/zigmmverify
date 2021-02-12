@@ -58,10 +58,10 @@ fn warnExpr(expr: Expression) void {
     for (expr) |cvToken| {
         switch (cvToken.cv) {
             .C => {
-                std.debug.warn("{1}{0}", .{ cvToken.token, sep });
+                std.debug.warn("{1s}{0s}", .{ cvToken.token, sep });
             },
             .V => {
-                std.debug.warn("{1}${0}", .{ cvToken.token, sep });
+                std.debug.warn("{1s}${0s}", .{ cvToken.token, sep });
             },
         }
         sep = " ";
