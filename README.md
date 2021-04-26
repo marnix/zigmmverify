@@ -19,7 +19,7 @@ and modules.
 
 # How to build and run
 
-Build using Zig 0.7.1, then just run the resulting binary,
+Build using Zig master, then just run the resulting binary,
 passing a single .mm file on the command line.
 
 For example, use set.mm, which you can get from metamath.org,
