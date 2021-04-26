@@ -12,11 +12,7 @@ pub fn main() !void {
     const fileName = fileName: {
         var argIter = std.process.args();
         _ = argIter.nextPosix().?; // skip command name, is always present
-        if (argIter.nextPosix()) |fileName| {
-            break :fileName fileName;
-        } else {
-            return error.SingleCommandLineArgumentExpected;
-        }
+        break :fileName (argIter.nextPosix() orelse return error.SingleCommandLineArgumentExpected);
     };
 
     _ = verify.verifyFile(fileName, allocator) catch |err| {
