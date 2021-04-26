@@ -9,14 +9,13 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = &arena.allocator;
 
-    const mm_file = try std.fs.cwd().openFile("set.mm", .{});
-    defer mm_file.close();
-    const size = (try mm_file.stat()).size;
-    const mm_buffer = try allocator.alloc(u8, size);
-    defer allocator.free(mm_buffer);
-    _ = try mm_file.readAll(mm_buffer);
+    const fileName = fileName: {
+        var argIter = std.process.args();
+        _ = argIter.nextPosix().?; // skip command name, is always present
+        break :fileName (argIter.nextPosix() orelse return error.SingleCommandLineArgumentExpected);
+    };
 
-    _ = verify.verify(mm_buffer, allocator) catch |err| {
+    _ = verify.verifyFile(fileName, allocator) catch |err| {
         // ...some nice error reporting
         return err;
     };
