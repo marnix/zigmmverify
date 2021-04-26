@@ -19,14 +19,7 @@ pub fn main() !void {
         }
     };
 
-    const mm_file = try std.fs.cwd().openFile(fileName, .{});
-    defer mm_file.close();
-    const size = (try mm_file.stat()).size;
-    const mm_buffer = try allocator.alloc(u8, size);
-    defer allocator.free(mm_buffer);
-    _ = try mm_file.readAll(mm_buffer);
-
-    _ = verify.verify(mm_buffer, allocator) catch |err| {
+    _ = verify.verifyFile(fileName, allocator) catch |err| {
         // ...some nice error reporting
         return err;
     };

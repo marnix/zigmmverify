@@ -17,7 +17,14 @@ const RuleIterator = compose.RuleIterator;
 const prove = @import("prove.zig");
 const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
-pub fn verify(buffer: []const u8, allocator: *Allocator) !void {
+pub fn verifyFile(mm_file_name: []const u8, allocator: *Allocator) !void {
+    const mm_file = try std.fs.cwd().openFile(mm_file_name, .{});
+    defer mm_file.close();
+    const size = (try mm_file.stat()).size;
+    const buffer = try allocator.alloc(u8, size);
+    defer allocator.free(buffer);
+    _ = try mm_file.readAll(buffer);
+
     errdefer |err| std.debug.warn("\nError {0} happened...\n", .{err});
     var iter = try RuleIterator.init(allocator);
     defer iter.deinit();
@@ -90,8 +97,23 @@ const eq = tokenize.eq;
 const eqs = tokenize.eqs;
 const Token = tokenize.Token;
 
+fn _verifyBuffer(buffer: []const u8) !void {
+    const test_file_name = "test_file.mm";
+
+    // write buffer to temporary test_file_name
+    var tmpDir = std.testing.tmpDir(.{});
+    defer tmpDir.cleanup();
+    const test_file = try tmpDir.dir.createFile(test_file_name, .{});
+    defer test_file.close();
+    try test_file.writeAll(buffer);
+    const full_test_file_name = try tmpDir.dir.realpathAlloc(std.testing.allocator, test_file_name);
+    defer std.testing.allocator.free(full_test_file_name);
+
+    try verifyFile(full_test_file_name, std.testing.allocator);
+}
+
 test "proof with $d violation" {
-    expectError(Error.DVRMissing, verify(
+    expectError(Error.DVRMissing, _verifyBuffer(
         \\$c wff |- $.
         \\$v P Q R $.
         \\wp $f wff P $.
@@ -102,12 +124,12 @@ test "proof with $d violation" {
         \\${
         \\  qr.1 $e |- Q $. qr $p |- R $= wq wr qr.1 pq $.
         \\$}
-    , std.testing.allocator));
+    ));
 }
 
 test "proof with correct $d" {
     // FOR DEBUGGING: const allocator = &std.heap.loggingAllocator(std.testing.allocator, std.io.getStdErr().outStream()).allocator;
-    try verify(
+    try _verifyBuffer(
         \\$c wff |- $.
         \\$v P Q R $.
         \\wp $f wff P $.
@@ -119,16 +141,16 @@ test "proof with correct $d" {
         \\  $d Q R $.
         \\  qr.1 $e |- Q $. qr $p |- R $= wq wr qr.1 pq $.
         \\$}
-    , std.testing.allocator);
+    );
 }
 
 test "multiple proofs" {
-    try verify(
+    try _verifyBuffer(
         \\$c T $.
         \\${
         \\  h $e T $.
         \\  p $p T $= ( ) A $.
         \\  q $p T $= ( ) A $.
         \\$}
-    , std.testing.allocator);
+    );
 }
