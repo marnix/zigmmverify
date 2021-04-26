@@ -375,7 +375,7 @@ test "parse constant declaration" {
     expect((try statements.next()) == null);
 }
 
-test "parse comment" {
+test "parse comment, also including $[" {
     var statements = StatementIterator.init(std.testing.allocator, "$( a $[ b.mm $] c $)");
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);

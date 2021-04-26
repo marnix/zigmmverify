@@ -19,14 +19,15 @@ and modules.
 
 # How to build and run
 
-Get set.mm from metamath.org or GitHub, or download an older version like so:
-```
-wget https://github.com/metamath/set.mm/raw/b0925f0afd5963577ea76b252cb6613c885b393d/set.mm -O set.mm
-```
+Build using Zig 0.7.1, then just run the resulting binary,
+passing a single .mm file on the command line.
 
-For now, set.mm is hardcoded and must be in the current directory.
-
-Build using zig 0.6.0, then just run the resulting binary.
+For example, use set.mm, which you can get from metamath.org,
+or download the most recent version
+directly from https://github.com/metamath/set.mm like so:
+```
+wget https://github.com/metamath/set.mm/raw/develop/set.mm -O set.mm
+```
 
 # Next tasks
 
@@ -46,8 +47,6 @@ Build using zig 0.6.0, then just run the resulting binary.
 - Identify the location (line/column) of at least the first error.
 
 - Don't use 'error union' for Metamath verification errors.
-
-- Create a proper main, rather than one that hardcodes set.mm.
 
 - Run the test suite from https://github.com/david-a-wheeler/metamath-test
   probably by checking it out as a Git submodule
