@@ -52,7 +52,7 @@ pub const StatementIterator = struct {
     tokens: TokenIterator,
     optStatement: ?*Statement = null,
 
-    pub fn init(allocator: *Allocator, buffer: Token) StatementIterator {
+    pub fn init(allocator: *Allocator, buffer: []const u8) StatementIterator {
         return StatementIterator{ .allocator = allocator, .tokens = TokenIterator{ .buffer = buffer } };
     }
 
@@ -63,10 +63,16 @@ pub const StatementIterator = struct {
             return s;
         }
         // get next token
-        var token = (try self.nextToken()) orelse {
-            // we have seen the last Token, so we have seen the last Statement, end of iteration
-            return null;
-        };
+        var token: Token = undefined;
+        while (true) {
+            token = (try self.nextToken()) orelse {
+                // we have seen the last Token, so we have seen the last Statement, end of iteration
+                return null;
+            };
+            if (eq(token, "$[")) {
+                (try self.nextUntil("$]")).deinit();
+            } else break;
+        }
         // if the token is a label, read one more token
         var optLabel: ?Token = null;
         while (optLabel == null) {
@@ -182,6 +188,12 @@ fn forNext(statements: *StatementIterator, f: anytype) !void {
     const s = try statements.next();
     _ = f.do(s);
     s.?.deinit(std.testing.allocator);
+}
+
+test "parse empty file with empty include file" {
+    var statements = StatementIterator.init(std.testing.allocator, "$[ empty.mm $]");
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
 }
 
 test "$c with label" {
