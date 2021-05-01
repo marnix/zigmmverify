@@ -183,6 +183,8 @@ pub const StatementIterator = struct {
 };
 
 const expect = std.testing.expect;
+const alltests = @import("alltests.zig");
+const TestFS = alltests.TestFS;
 
 fn forNext(statements: *StatementIterator, f: anytype) !void {
     const s = try statements.next();
@@ -191,6 +193,10 @@ fn forNext(statements: *StatementIterator, f: anytype) !void {
 }
 
 test "parse empty file with empty include file" {
+    var testFS = TestFS.init();
+    defer testFS.deinit();
+    try testFS.writeFile("empty.mm", "");
+
     var statements = StatementIterator.init(std.testing.allocator, "$[ empty.mm $]");
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);

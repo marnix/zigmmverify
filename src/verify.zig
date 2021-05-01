@@ -96,19 +96,19 @@ const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
 const Token = tokenize.Token;
+const alltests = @import("alltests.zig");
+const TestFS = alltests.TestFS;
 
 fn _verifyBuffer(buffer: []const u8) !void {
     const test_file_name = "test_file.mm";
 
-    // write buffer to temporary test_file_name
-    var tmpDir = std.testing.tmpDir(.{});
-    defer tmpDir.cleanup();
-    const test_file = try tmpDir.dir.createFile(test_file_name, .{});
-    defer test_file.close();
-    try test_file.writeAll(buffer);
-    const full_test_file_name = try tmpDir.dir.realpathAlloc(std.testing.allocator, test_file_name);
-    defer std.testing.allocator.free(full_test_file_name);
+    var testFS = TestFS.init();
+    defer testFS.deinit();
+    try testFS.writeFile(test_file_name, buffer);
 
+    // TODO: somehow avoid the need for full_test_file_name
+    const full_test_file_name = try testFS.tmpDir.dir.realpathAlloc(std.testing.allocator, test_file_name);
+    defer std.testing.allocator.free(full_test_file_name);
     try verifyFile(full_test_file_name, std.testing.allocator);
 }
 
