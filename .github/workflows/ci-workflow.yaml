@@ -19,7 +19,7 @@ jobs:
       - run: zig build -Drelease-fast=true
       # the previous step brings down memory use in the next step, from 10.7 GB to 6.4 GB
       # TODO: fix that exorbitant memory use for a 42 MB set.mm file...
-      - run: /usr/bin/time -v zig-cache/bin/zigmmverify set.mm
+      - run: /usr/bin/time -v zig-out/bin/zigmmverify set.mm
   lint:
     runs-on: ubuntu-latest
     steps:
