@@ -99,8 +99,7 @@ pub const StatementIterator = struct {
 
             self.nestedIterator = try self.allocator.create(StatementIterator);
             self.nestedIterator.?.* = StatementIterator.init(self.allocator, self.dir, buffer);
-
-            // ...and go on to use the nested iterator
+            // ...and go on to immediately use this new nested iterator
         }
         // if the token is a label, read one more token
         var optLabel: ?Token = null;

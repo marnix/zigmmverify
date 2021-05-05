@@ -13,7 +13,7 @@ pub fn main() !void {
         break :fileName (argIter.nextPosix() orelse return error.SingleCommandLineArgumentExpected);
     };
 
-    _ = verify.verifyFile(std.fs.cwd(), fileName, allocator) catch |err| {
+    _ = verify.verifyFile(allocator, std.fs.cwd(), fileName) catch |err| {
         // ...some nice error reporting
         return err;
     };

@@ -17,7 +17,7 @@ const RuleIterator = compose.RuleIterator;
 const prove = @import("prove.zig");
 const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
-pub fn verifyFile(dir: std.fs.Dir, mm_file_name: []const u8, allocator: *Allocator) !void {
+pub fn verifyFile(allocator: *Allocator, dir: std.fs.Dir, mm_file_name: []const u8) !void {
     const mm_file = try dir.openFile(mm_file_name, .{});
     defer mm_file.close();
     const size = (try mm_file.stat()).size;
@@ -101,7 +101,7 @@ fn _verifyBuffer(buffer: []const u8) !void {
     defer testFS.deinit();
     try testFS.writeFile(test_file_name, buffer);
 
-    try verifyFile(testFS.tmpDir.dir, test_file_name, std.testing.allocator);
+    try verifyFile(std.testing.allocator, testFS.tmpDir.dir, test_file_name);
 }
 
 test "proof with $d violation" {
