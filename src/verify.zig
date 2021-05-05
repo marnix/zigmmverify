@@ -3,6 +3,9 @@ usingnamespace @import("globals.zig");
 const errors = @import("errors.zig");
 const Error = errors.Error;
 
+const read = @import("read.zig");
+const readBuffer = read.readBuffer;
+
 const tokenize = @import("tokenize.zig");
 const TokenList = tokenize.TokenList;
 
@@ -18,12 +21,8 @@ const prove = @import("prove.zig");
 const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
 pub fn verifyFile(allocator: *Allocator, dir: std.fs.Dir, mm_file_name: []const u8) !void {
-    const mm_file = try dir.openFile(mm_file_name, .{});
-    defer mm_file.close();
-    const size = (try mm_file.stat()).size;
-    const buffer = try allocator.alloc(u8, size);
+    const buffer = try readBuffer(allocator, dir, mm_file_name);
     defer allocator.free(buffer);
-    _ = try mm_file.readAll(buffer);
 
     errdefer |err| std.debug.warn("\nError {0} happened...\n", .{err});
     var iter = try RuleIterator.init(allocator);

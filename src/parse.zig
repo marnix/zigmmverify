@@ -3,6 +3,9 @@ usingnamespace @import("globals.zig");
 const errors = @import("errors.zig");
 const Error = errors.Error;
 
+const read = @import("read.zig");
+const readBuffer = read.readBuffer;
+
 const tokenize = @import("tokenize.zig");
 const Token = tokenize.Token;
 const eq = tokenize.eq;
@@ -58,7 +61,7 @@ pub const StatementIterator = struct {
         return StatementIterator{ .allocator = allocator, .dir = dir, .tokens = TokenIterator{ .buffer = buffer } };
     }
 
-    pub fn next(self: *StatementIterator) (Error || Allocator.Error || std.fs.File.OpenError || std.os.ReadError)!?*Statement {
+    pub fn next(self: *StatementIterator) (Error || Allocator.Error || std.os.ReadError)!?*Statement {
         // return any statement detected in the previous call
         if (self.optStatement) |s| {
             self.optStatement = null;
@@ -90,13 +93,7 @@ pub const StatementIterator = struct {
             defer f.deinit();
             const include_file_name = f.items[0];
 
-            // TODO: Remove duplication with verifyFile()
-            const mm_file = (self.dir.openFile(include_file_name, .{})) catch return Error.IncorrectFileName;
-            defer mm_file.close();
-            const size = (try mm_file.stat()).size;
-            const buffer = try self.allocator.alloc(u8, size);
-            _ = try mm_file.readAll(buffer);
-
+            const buffer = try readBuffer(self.allocator, self.dir, include_file_name);
             self.nestedIterator = try self.allocator.create(StatementIterator);
             self.nestedIterator.?.* = StatementIterator.init(self.allocator, self.dir, buffer);
             // ...and go on to immediately use this new nested iterator
