@@ -168,9 +168,9 @@ pub const RuleIterator = struct {
         self.meanings.deinit();
     }
 
-    pub fn addStatementsFrom(self: *Self, buffer: []const u8) !void {
+    pub fn addStatementsFrom(self: *Self, dir: std.fs.Dir, buffer: []const u8) !void {
         assert(self.statements == null);
-        self.statements = StatementIterator.init(self.allocator, buffer);
+        self.statements = StatementIterator.init(self.allocator, dir, buffer);
     }
 
     pub fn next(self: *Self) !?RuleIteratorItem {
@@ -520,7 +520,8 @@ fn runRuleIterator(buffer: []const u8, allocator: *Allocator) !void {
 }
 
 fn runRuleIteratorPart(iter: *RuleIterator, buffer: []const u8) !void {
-    try iter.addStatementsFrom(buffer);
+    const unused_root_dir = undefined; // no file access done in this test
+    try iter.addStatementsFrom(unused_root_dir, buffer);
     while (try iter.next()) |*item| {}
 }
 
@@ -696,7 +697,7 @@ test "duplicate constant" {
 }
 
 fn tokenListOf(buffer: []const u8) !TokenList {
-    var it = @import("parse.zig").StatementIterator.init(std.testing.allocator, buffer);
+    var it = @import("parse.zig")._StatementIterator_init(buffer);
     var result = TokenList.init(std.testing.allocator);
     while (true) {
         if (try it.nextToken()) |token| {
