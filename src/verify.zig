@@ -36,8 +36,6 @@ pub fn verifyFile(dir: std.fs.Dir, mm_file_name: []const u8, allocator: *Allocat
     var nr_proofs: u64 = 0;
     defer std.debug.warn("\nFound {0} $p statements so far.\n", .{nr_proofs});
 
-    var batch = std.event.Batch(anyerror!void, 1000, .auto_async).init();
-
     try iter.addStatementsFrom(dir, buffer);
     while (try iter.next()) |*item| {
         defer item.deinit();
@@ -46,15 +44,12 @@ pub fn verifyFile(dir: std.fs.Dir, mm_file_name: []const u8, allocator: *Allocat
             const rule = item.rule;
             std.event.Loop.startCpuBoundOperation();
             const frame = try frameAllocator.create(@Frame(verifyProofConclusion));
-            frame.* = async verifyProofConclusion(&iter, item.label, proof, rule.hypotheses, .{
+            try verifyProofConclusion(&iter, item.label, proof, rule.hypotheses, .{
                 .expression = rule.conclusion,
                 .dvPairs = rule.activeDVPairs,
             });
-            batch.add(frame);
         }
     }
-
-    try batch.wait();
 
     if (iter.currentScopeDiff) |_| return Error.Incomplete; // unclosed $}
 }

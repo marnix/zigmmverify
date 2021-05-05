@@ -1,5 +1,3 @@
-pub const io_mode = .evented;
-
 usingnamespace @import("globals.zig");
 
 const verify = @import("verify.zig");
