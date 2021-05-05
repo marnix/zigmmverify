@@ -18,7 +18,6 @@ const InferenceRule = compose.InferenceRule;
 const RuleIterator = compose.RuleIterator;
 
 const prove = @import("prove.zig");
-const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
 pub fn verifyFile(allocator: *Allocator, dir: std.fs.Dir, mm_file_name: []const u8) !void {
     const buffer = try readBuffer(allocator, dir, mm_file_name);
