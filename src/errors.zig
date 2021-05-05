@@ -8,6 +8,7 @@ pub const Error = error{
     IllegalToken,
     MissingLabel,
     UnexpectedLabel,
+    IncorrectFileName,
     // semantical errors
     Duplicate,
     // proof errors

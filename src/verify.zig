@@ -3,6 +3,9 @@ usingnamespace @import("globals.zig");
 const errors = @import("errors.zig");
 const Error = errors.Error;
 
+const read = @import("read.zig");
+const readBuffer = read.readBuffer;
+
 const tokenize = @import("tokenize.zig");
 const TokenList = tokenize.TokenList;
 
@@ -15,15 +18,10 @@ const InferenceRule = compose.InferenceRule;
 const RuleIterator = compose.RuleIterator;
 
 const prove = @import("prove.zig");
-const AsRuleMeaningMap = prove.AsRuleMeaningMap;
 
-pub fn verifyFile(mm_file_name: []const u8, allocator: *Allocator) !void {
-    const mm_file = try std.fs.cwd().openFile(mm_file_name, .{});
-    defer mm_file.close();
-    const size = (try mm_file.stat()).size;
-    const buffer = try allocator.alloc(u8, size);
+pub fn verifyFile(allocator: *Allocator, dir: std.fs.Dir, mm_file_name: []const u8) !void {
+    const buffer = try readBuffer(allocator, dir, mm_file_name);
     defer allocator.free(buffer);
-    _ = try mm_file.readAll(buffer);
 
     errdefer |err| std.debug.warn("\nError {0} happened...\n", .{err});
     var iter = try RuleIterator.init(allocator);
@@ -36,9 +34,7 @@ pub fn verifyFile(mm_file_name: []const u8, allocator: *Allocator) !void {
     var nr_proofs: u64 = 0;
     defer std.debug.warn("\nFound {0} $p statements so far.\n", .{nr_proofs});
 
-    var batch = std.event.Batch(anyerror!void, 1000, .auto_async).init();
-
-    try iter.addStatementsFrom(buffer);
+    try iter.addStatementsFrom(dir, buffer);
     while (try iter.next()) |*item| {
         defer item.deinit();
         if (item.proof) |proof| {
@@ -46,15 +42,12 @@ pub fn verifyFile(mm_file_name: []const u8, allocator: *Allocator) !void {
             const rule = item.rule;
             std.event.Loop.startCpuBoundOperation();
             const frame = try frameAllocator.create(@Frame(verifyProofConclusion));
-            frame.* = async verifyProofConclusion(&iter, item.label, proof, rule.hypotheses, .{
+            try verifyProofConclusion(&iter, item.label, proof, rule.hypotheses, .{
                 .expression = rule.conclusion,
                 .dvPairs = rule.activeDVPairs,
             });
-            batch.add(frame);
         }
     }
-
-    try batch.wait();
 
     if (iter.currentScopeDiff) |_| return Error.Incomplete; // unclosed $}
 }
@@ -96,20 +89,17 @@ const expectError = std.testing.expectError;
 const eq = tokenize.eq;
 const eqs = tokenize.eqs;
 const Token = tokenize.Token;
+const alltests = @import("alltests.zig");
+const TestFS = alltests.TestFS;
 
 fn _verifyBuffer(buffer: []const u8) !void {
     const test_file_name = "test_file.mm";
 
-    // write buffer to temporary test_file_name
-    var tmpDir = std.testing.tmpDir(.{});
-    defer tmpDir.cleanup();
-    const test_file = try tmpDir.dir.createFile(test_file_name, .{});
-    defer test_file.close();
-    try test_file.writeAll(buffer);
-    const full_test_file_name = try tmpDir.dir.realpathAlloc(std.testing.allocator, test_file_name);
-    defer std.testing.allocator.free(full_test_file_name);
+    var testFS = TestFS.init();
+    defer testFS.deinit();
+    try testFS.writeFile(test_file_name, buffer);
 
-    try verifyFile(full_test_file_name, std.testing.allocator);
+    try verifyFile(std.testing.allocator, testFS.tmpDir.dir, test_file_name);
 }
 
 test "proof with $d violation" {
