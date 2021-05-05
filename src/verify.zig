@@ -38,7 +38,7 @@ pub fn verifyFile(dir: std.fs.Dir, mm_file_name: []const u8, allocator: *Allocat
 
     var batch = std.event.Batch(anyerror!void, 1000, .auto_async).init();
 
-    try iter.addStatementsFrom(buffer);
+    try iter.addStatementsFrom(dir, buffer);
     while (try iter.next()) |*item| {
         defer item.deinit();
         if (item.proof) |proof| {

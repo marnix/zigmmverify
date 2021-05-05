@@ -52,7 +52,7 @@ pub const StatementIterator = struct {
     tokens: TokenIterator,
     optStatement: ?*Statement = null,
 
-    pub fn init(allocator: *Allocator, buffer: []const u8) StatementIterator {
+    pub fn init(allocator: *Allocator, dir: std.fs.Dir, buffer: []const u8) StatementIterator {
         return StatementIterator{ .allocator = allocator, .tokens = TokenIterator{ .buffer = buffer } };
     }
 
@@ -193,7 +193,8 @@ fn forNext(statements: *StatementIterator, f: anytype) !void {
 }
 
 pub fn _StatementIterator_init(buffer: []const u8) StatementIterator {
-    return StatementIterator.init(std.testing.allocator, buffer);
+    const unused_root_dir = undefined; // no file access done in this test
+    return StatementIterator.init(std.testing.allocator, unused_root_dir, buffer);
 }
 
 test "parse empty file with empty include file" {
@@ -201,7 +202,7 @@ test "parse empty file with empty include file" {
     defer testFS.deinit();
     try testFS.writeFile("empty.mm", "");
 
-    var statements = StatementIterator.init(std.testing.allocator, "$[ empty.mm $]");
+    var statements = StatementIterator.init(std.testing.allocator, testFS.tmpDir.dir, "$[ empty.mm $]");
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
