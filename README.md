@@ -40,8 +40,6 @@ wget https://github.com/metamath/set.mm/raw/develop/set.mm -O set.mm
 
 - Merge verify.zig and prove.zig into a single source file?
 
-- Support $[ ... $] includes.  (Presumably in the tokenizer.)
-
 - Support `?` in proofs.
 
 - Identify the location (line/column) of at least the first error.
