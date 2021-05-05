@@ -49,14 +49,16 @@ pub const Statement = union(StatementType) {
 
 pub const StatementIterator = struct {
     allocator: *Allocator,
+    dir: std.fs.Dir,
     tokens: TokenIterator,
     optStatement: ?*Statement = null,
+    nestedIterator: ?*StatementIterator = null,
 
     pub fn init(allocator: *Allocator, dir: std.fs.Dir, buffer: []const u8) StatementIterator {
-        return StatementIterator{ .allocator = allocator, .tokens = TokenIterator{ .buffer = buffer } };
+        return StatementIterator{ .allocator = allocator, .dir = dir, .tokens = TokenIterator{ .buffer = buffer } };
     }
 
-    pub fn next(self: *StatementIterator) !?*Statement {
+    pub fn next(self: *StatementIterator) (Error || Allocator.Error || std.fs.File.OpenError || std.os.ReadError)!?*Statement {
         // return any statement detected in the previous call
         if (self.optStatement) |s| {
             self.optStatement = null;
@@ -65,13 +67,40 @@ pub const StatementIterator = struct {
         // get next token
         var token: Token = undefined;
         while (true) {
+            // find token in nested iterator
+            if (self.nestedIterator) |it| {
+                const optStatement = try it.next();
+                if (optStatement) |stat| return stat;
+                // end of nested iterator, clean up
+                self.allocator.free(it.tokens.buffer);
+                self.allocator.destroy(it);
+                self.nestedIterator = null;
+            }
+
+            // find token in myself
             token = (try self.nextToken()) orelse {
                 // we have seen the last Token, so we have seen the last Statement, end of iteration
                 return null;
             };
-            if (eq(token, "$[")) {
-                (try self.nextUntil("$]")).deinit();
-            } else break;
+            if (!eq(token, "$[")) break;
+
+            // create nested iterator for include file
+            const f = try self.nextUntil("$]");
+            if (f.items.len != 1) return Error.IncorrectFileName; // TODO: test
+            defer f.deinit();
+            const include_file_name = f.items[0];
+
+            // TODO: Remove duplication with verifyFile()
+            const mm_file = (self.dir.openFile(include_file_name, .{})) catch return Error.IncorrectFileName;
+            defer mm_file.close();
+            const size = (try mm_file.stat()).size;
+            const buffer = try self.allocator.alloc(u8, size);
+            _ = try mm_file.readAll(buffer);
+
+            self.nestedIterator = try self.allocator.create(StatementIterator);
+            self.nestedIterator.?.* = StatementIterator.init(self.allocator, self.dir, buffer);
+
+            // ...and go on to use the nested iterator
         }
         // if the token is a label, read one more token
         var optLabel: ?Token = null;
@@ -197,12 +226,44 @@ pub fn _StatementIterator_init(buffer: []const u8) StatementIterator {
     return StatementIterator.init(std.testing.allocator, unused_root_dir, buffer);
 }
 
-test "parse empty file with empty include file" {
+test "parse constant declaration from include file" {
+    var testFS = TestFS.init();
+    defer testFS.deinit();
+    try testFS.writeFile("constants.mm", "$c wff |- $.");
+
+    var statements = StatementIterator.init(std.testing.allocator, testFS.tmpDir.dir, "$[ constants.mm $]");
+    _ = try forNext(&statements, struct {
+        fn do(s: anytype) void {
+            expect(eqs(s.?.C.constants, &[_]Token{ "wff", "|-" }));
+        }
+    });
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "parse file only including empty include file" {
     var testFS = TestFS.init();
     defer testFS.deinit();
     try testFS.writeFile("empty.mm", "");
 
     var statements = StatementIterator.init(std.testing.allocator, testFS.tmpDir.dir, "$[ empty.mm $]");
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "include non-existing file" {
+    var testFS = TestFS.init();
+    defer testFS.deinit();
+
+    var statements = StatementIterator.init(std.testing.allocator, testFS.tmpDir.dir, "$[ nonexisting.mm $]");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.IncorrectFileName);
+    expect((try statements.next()) == null);
+    expect((try statements.next()) == null);
+}
+
+test "include without file name" {
+    var statements = _StatementIterator_init("$[ $]");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.IncorrectFileName);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
