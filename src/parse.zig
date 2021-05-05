@@ -192,6 +192,10 @@ fn forNext(statements: *StatementIterator, f: anytype) !void {
     s.?.deinit(std.testing.allocator);
 }
 
+pub fn _StatementIterator_init(buffer: []const u8) StatementIterator {
+    return StatementIterator.init(std.testing.allocator, buffer);
+}
+
 test "parse empty file with empty include file" {
     var testFS = TestFS.init();
     defer testFS.deinit();
@@ -203,7 +207,7 @@ test "parse empty file with empty include file" {
 }
 
 test "$c with label" {
-    var statements = StatementIterator.init(std.testing.allocator, "c $c T $.");
+    var statements = _StatementIterator_init("c $c T $.");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
         fn do(s: anytype) void {
@@ -215,7 +219,7 @@ test "$c with label" {
 }
 
 test "$v with label" {
-    var statements = StatementIterator.init(std.testing.allocator, "v $v a $.");
+    var statements = _StatementIterator_init("v $v a $.");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
         fn do(s: anytype) void {
@@ -227,21 +231,21 @@ test "$v with label" {
 }
 
 test "$f without label" {
-    var statements = StatementIterator.init(std.testing.allocator, "$f");
+    var statements = _StatementIterator_init("$f");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "$e without label" {
-    var statements = StatementIterator.init(std.testing.allocator, "$e");
+    var statements = _StatementIterator_init("$e");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "$d with label" {
-    var statements = StatementIterator.init(std.testing.allocator, "dxy $d x y $.");
+    var statements = _StatementIterator_init("dxy $d x y $.");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
         fn do(s: anytype) void {
@@ -253,21 +257,21 @@ test "$d with label" {
 }
 
 test "$a without label" {
-    var statements = StatementIterator.init(std.testing.allocator, "$a");
+    var statements = _StatementIterator_init("$a");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "$p without label" {
-    var statements = StatementIterator.init(std.testing.allocator, "$p");
+    var statements = _StatementIterator_init("$p");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "${ with label" {
-    var statements = StatementIterator.init(std.testing.allocator, "block ${");
+    var statements = _StatementIterator_init("block ${");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
         fn do(s: anytype) void {
@@ -279,7 +283,7 @@ test "${ with label" {
 }
 
 test "$} with label" {
-    var statements = StatementIterator.init(std.testing.allocator, "endblock $}");
+    var statements = _StatementIterator_init("endblock $}");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
         fn do(s: anytype) void {
@@ -291,56 +295,56 @@ test "$} with label" {
 }
 
 test "unknown statement type (token skipped)" {
-    var statements = StatementIterator.init(std.testing.allocator, "x $x");
+    var statements = _StatementIterator_init("x $x");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "too short $f statement" {
-    var statements = StatementIterator.init(std.testing.allocator, "w $f wff $.");
+    var statements = _StatementIterator_init("w $f wff $.");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.Incomplete);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "`$xy` token after label" {
-    var statements = StatementIterator.init(std.testing.allocator, "$xy");
+    var statements = _StatementIterator_init("$xy");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "`$xy` token after label" {
-    var statements = StatementIterator.init(std.testing.allocator, "aLabel $xy");
+    var statements = _StatementIterator_init("aLabel $xy");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "`$` token without label" {
-    var statements = StatementIterator.init(std.testing.allocator, "$");
+    var statements = _StatementIterator_init("$");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "`$` token after label" {
-    var statements = StatementIterator.init(std.testing.allocator, "aLabel $");
+    var statements = _StatementIterator_init("aLabel $");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "non-$ token after label" {
-    var statements = StatementIterator.init(std.testing.allocator, "aLabel nonCommand");
+    var statements = _StatementIterator_init("aLabel nonCommand");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedToken);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "parse $p declaration" {
-    var statements = StatementIterator.init(std.testing.allocator, "idwffph $p wff ph $= ? $.");
+    var statements = _StatementIterator_init("idwffph $p wff ph $= ? $.");
     _ = try forNext(&statements, struct {
         fn do(s: anytype) void {
             expect(eqs(s.?.P.tokens, &[_]Token{ "wff", "ph" }));
@@ -352,7 +356,7 @@ test "parse $p declaration" {
 }
 
 test "parse $f declaration" {
-    var statements = StatementIterator.init(std.testing.allocator, "wph $f wff ph $.");
+    var statements = _StatementIterator_init("wph $f wff ph $.");
     _ = try forNext(&statements, struct {
         fn do(s: anytype) void {
             expect(eq(s.?.F.label, "wph"));
@@ -364,7 +368,7 @@ test "parse $f declaration" {
 }
 
 test "check error for label on $d" {
-    var statements = StatementIterator.init(std.testing.allocator, "xfreeinA $d A x $.");
+    var statements = _StatementIterator_init("xfreeinA $d A x $.");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
         fn do(s: anytype) void {
@@ -376,14 +380,14 @@ test "check error for label on $d" {
 }
 
 test "check error for unknown command" {
-    var statements = StatementIterator.init(std.testing.allocator, "$Q");
+    var statements = _StatementIterator_init("$Q");
     if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "parse constant declaration" {
-    var statements = StatementIterator.init(std.testing.allocator, "$c wff |- $.");
+    var statements = _StatementIterator_init("$c wff |- $.");
     _ = try forNext(&statements, struct {
         fn do(s: anytype) void {
             expect(eqs(s.?.C.constants, &[_]Token{ "wff", "|-" }));
@@ -394,13 +398,13 @@ test "parse constant declaration" {
 }
 
 test "parse comment, also including $[" {
-    var statements = StatementIterator.init(std.testing.allocator, "$( a $[ b.mm $] c $)");
+    var statements = _StatementIterator_init("$( a $[ b.mm $] c $)");
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }
 
 test "parse empty file" {
-    var statements = StatementIterator.init(std.testing.allocator, "");
+    var statements = _StatementIterator_init("");
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
 }

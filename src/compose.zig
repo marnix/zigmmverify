@@ -696,7 +696,7 @@ test "duplicate constant" {
 }
 
 fn tokenListOf(buffer: []const u8) !TokenList {
-    var it = @import("parse.zig").StatementIterator.init(std.testing.allocator, buffer);
+    var it = @import("parse.zig")._StatementIterator_init(buffer);
     var result = TokenList.init(std.testing.allocator);
     while (true) {
         if (try it.nextToken()) |token| {
