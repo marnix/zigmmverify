@@ -18,31 +18,72 @@ Build using Zig 0.7.1, then just run the resulting binary,
 passing a single .mm file on the command line.
 
 For example, use set.mm, which you can get from metamath.org,
-or download the most recent version
-directly from https://github.com/metamath/set.mm like so:
-```
-wget https://github.com/metamath/set.mm/raw/develop/set.mm -O set.mm
-```
+or download the most recent version directly from GitHub:
+https://github.com/metamath/set.mm/raw/develop/set.mm.
+
+The version of the Metamath specification that was implemented, is
+the one from the 2nd edition Metamath book.
+(Norman D. Megill, David A. Wheeler, 
+"Metamath: A Computer Language for Mathematical Proofs".
+Lulu Press, 2019.
+http://us.metamath.org/downloads/metamath.pdf .)
 
 # Next tasks
 
-- Verify that 'normal' tokens don't start with `$`.
+Verifier completeness:
+
+- Verify that 'normal' tokens don't start with `$`,
+  label tokens use only allowed characters, etc.
+
+- Support `?` in proofs.
+
+Clean up:
 
 - Clean-up / refactor RuleIterator + ScopeDiff:
   Add methods, move functionality between these structs.
   Also encapsulate some parts.
   Also try to avoid duplication in statement handling.
 
-- Merge verify.zig and prove.zig into a single source file?
+- Work towards a library that can also be used for $a/$p/$e parse trees.
 
-- Support `?` in proofs.
+Functionality:
+
+- Generate a parse tree for every $a/$p/$e statement.
+  If possible/feasible, check that it is the only possible parse tree.
+  Try to also support 'conditional syntax rules,
+  so e.g. `${ $e -. B = 0 $. $a class ( A / B ) $. $}` which expresses that
+  `A / B` is only a syntactically valid expression if `B` is not zero.
+
+Verifier performance:
+
+- Optimize performance by reducing memory use:
+  A token is currently represented by a Zig slice (= pointer and a length),
+  and this could be replaced by a single small(ish) integer
+  by 'interning' all tokens.
+
+- Optimize performance by parallelizing using Zig `async`.
+
+- Optimize performance by reducing memory use:
+  I suspect ArrayList is not the right data structure for some of the lists.
+
+Verifier tests:
+
+- Run the test suite from https://github.com/david-a-wheeler/metamath-test
+  probably by checking it out as a Git submodule
+  and using the zig-mm-verify binary as the approved-or-not judge.
+
+- (Separate project.) Extend that test suite, to capture as many as possible
+  deviations from the specification as possible.
+
+Verifier usability:
 
 - Identify the location (line/column) of at least the first error.
 
 - Don't use 'error union' for Metamath verification errors.
 
-- Run the test suite from https://github.com/david-a-wheeler/metamath-test
-  probably by checking it out as a Git submodule
-  and having a binary that accepts a .mm file name
-  and exits with 0 if (and only if) the file and all its proofs
-  verify completly correctly.
+Language dialects:
+
+- Optional modes where $c/$v is allowed to be duplicated
+  (useful to create set-parsed.mm which declares stuff before `$[ set.mm $]`);
+  where $f implicitly does $c/$v;
+  and perhaps more.
