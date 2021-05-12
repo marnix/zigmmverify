@@ -103,7 +103,7 @@ fn _verifyBuffer(buffer: []const u8) !void {
 }
 
 test "proof with $d violation" {
-    expectError(Error.DVRMissing, _verifyBuffer(
+    try expectError(Error.DVRMissing, _verifyBuffer(
         \\$c wff |- $.
         \\$v P Q R $.
         \\wp $f wff P $.
