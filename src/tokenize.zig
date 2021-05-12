@@ -105,70 +105,70 @@ const expect = std.testing.expect;
 
 test "tokenizer on empty buffer" {
     var tokens = TokenIterator{ .buffer = "" };
-    expect((try tokens.next()) == null);
-    expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
 }
 
 test "tokenizer on whitespace buffer" {
     var tokens = TokenIterator{ .buffer = "  \t " };
-    expect((try tokens.next()) == null);
-    expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
 }
 
 test "tokenizer with whitespace at start" {
     var tokens = TokenIterator{ .buffer = " $d $." };
-    expect(eq((try tokens.next()).?, "$d"));
-    expect(eq((try tokens.next()).?, "$."));
-    expect((try tokens.next()) == null);
-    expect((try tokens.next()) == null);
+    try expect(eq((try tokens.next()).?, "$d"));
+    try expect(eq((try tokens.next()).?, "$."));
+    try expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
 }
 
 test "tokenizer with whitespace at end" {
     var tokens = TokenIterator{ .buffer = "$d $. " };
-    expect(eq((try tokens.next()).?, "$d"));
-    expect(eq((try tokens.next()).?, "$."));
-    expect((try tokens.next()) == null);
-    expect((try tokens.next()) == null);
+    try expect(eq((try tokens.next()).?, "$d"));
+    try expect(eq((try tokens.next()).?, "$."));
+    try expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
 }
 
 test "tokenizer with skipped illegal 'low' character" {
     var tokens = TokenIterator{ .buffer = "$d\x03$." };
-    expect(eq((try tokens.next()).?, "$d"));
-    if (tokens.next()) |_| unreachable else |err| expect(err == Error.IllegalCharacter);
-    expect(eq((try tokens.next()).?, "$."));
-    expect((try tokens.next()) == null);
-    expect((try tokens.next()) == null);
+    try expect(eq((try tokens.next()).?, "$d"));
+    if (tokens.next()) |_| unreachable else |err| try expect(err == Error.IllegalCharacter);
+    try expect(eq((try tokens.next()).?, "$."));
+    try expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
 }
 
 test "tokenizer with skipped illegal 'high' character" {
     var tokens = TokenIterator{ .buffer = "$( a\x7fc $)" };
-    expect(eq((try tokens.next()).?, "$("));
-    expect(eq((try tokens.next()).?, "a"));
-    if (tokens.next()) |_| unreachable else |err| expect(err == Error.IllegalCharacter);
-    expect(eq((try tokens.next()).?, "c"));
-    expect(eq((try tokens.next()).?, "$)"));
-    expect((try tokens.next()) == null);
-    expect((try tokens.next()) == null);
+    try expect(eq((try tokens.next()).?, "$("));
+    try expect(eq((try tokens.next()).?, "a"));
+    if (tokens.next()) |_| unreachable else |err| try expect(err == Error.IllegalCharacter);
+    try expect(eq((try tokens.next()).?, "c"));
+    try expect(eq((try tokens.next()).?, "$)"));
+    try expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
 }
 
 test "tokenizer" {
     var tokens = TokenIterator{ .buffer = "$c wff $." };
-    expect(eq((try tokens.next()).?, "$c"));
-    expect(eq((try tokens.next()).?, "wff"));
-    expect(eq((try tokens.next()).?, "$."));
-    expect((try tokens.next()) == null);
-    expect((try tokens.next()) == null);
+    try expect(eq((try tokens.next()).?, "$c"));
+    try expect(eq((try tokens.next()).?, "wff"));
+    try expect(eq((try tokens.next()).?, "$."));
+    try expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
 }
 
 test "tokenizer comment without newline" {
     var tokens = TokenIterator{ .buffer = "$( a b c $)\n$c $." };
-    expect(eq((try tokens.next()).?, "$("));
-    expect(eq((try tokens.next()).?, "a"));
-    expect(eq((try tokens.next()).?, "b"));
-    expect(eq((try tokens.next()).?, "c"));
-    expect(eq((try tokens.next()).?, "$)"));
-    expect(eq((try tokens.next()).?, "$c"));
-    expect(eq((try tokens.next()).?, "$."));
-    expect((try tokens.next()) == null);
-    expect((try tokens.next()) == null);
+    try expect(eq((try tokens.next()).?, "$("));
+    try expect(eq((try tokens.next()).?, "a"));
+    try expect(eq((try tokens.next()).?, "b"));
+    try expect(eq((try tokens.next()).?, "c"));
+    try expect(eq((try tokens.next()).?, "$)"));
+    try expect(eq((try tokens.next()).?, "$c"));
+    try expect(eq((try tokens.next()).?, "$."));
+    try expect((try tokens.next()) == null);
+    try expect((try tokens.next()) == null);
 }
