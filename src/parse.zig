@@ -70,7 +70,7 @@ pub const StatementIterator = struct {
         // get next token
         var token: Token = undefined;
         while (true) {
-            // find token in nested iterator
+            // find statement in nested iterator
             if (self.nestedIterator) |it| {
                 const optStatement = try it.next();
                 if (optStatement) |stat| return stat;
@@ -98,10 +98,13 @@ pub const StatementIterator = struct {
             self.nestedIterator.?.* = StatementIterator.init(self.allocator, self.dir, buffer);
             // ...and go on to immediately use this new nested iterator
         }
-        // if the token is a label, read one more token
+        // if the token is a label, store it and read one more token
         var optLabel: ?Token = null;
-        while (optLabel == null) {
-            if (token[0] == '$') break;
+        if (token[0] != '$') { // must be a label
+            for (token) |c| {
+                if (!(('a' <= c and c <= 'z') or ('A' <= c and c <= 'Z') or ('0' <= c and c <= '9') or c == '-' or c == '_' or c == '.'))
+                    return Error.IllegalToken;
+            }
             optLabel = token;
             token = (try self.nextToken()) orelse return Error.Incomplete;
         }
@@ -423,6 +426,11 @@ test "parse $f declaration" {
     });
     expect((try statements.next()) == null);
     expect((try statements.next()) == null);
+}
+
+test "incorrect label" {
+    var statements = _StatementIterator_init("w? $f wff ? $.");
+    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
 }
 
 test "check error for label on $d" {
