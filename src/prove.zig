@@ -257,23 +257,23 @@ test "simple substitution" {
     const expected = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "y", .cv = .V } };
     const actual = try substitute(original, substitution, std.testing.allocator);
     defer std.testing.allocator.free(actual);
-    expect(eqExpr(actual, expected));
+    try expect(eqExpr(actual, expected));
 }
 
 test "compare equal expressions" {
     const a = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
     const b = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
-    expect(eqExpr(a, b));
+    try expect(eqExpr(a, b));
 }
 
 test "compare unequal expressions" {
     const a = &[_]compose.CVToken{ .{ .token = "a", .cv = .C }, .{ .token = "x", .cv = .V } };
     const b = &[_]compose.CVToken{ .{ .token = "b", .cv = .C }, .{ .token = "x", .cv = .V } };
-    expect(!eqExpr(a, b));
+    try expect(!eqExpr(a, b));
 }
 
 test "compare unequal expressions, constant vs variable" {
     const a = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .V } };
     const b = &[_]compose.CVToken{ .{ .token = "class", .cv = .C }, .{ .token = "x", .cv = .C } };
-    expect(!eqExpr(a, b));
+    try expect(!eqExpr(a, b));
 }

@@ -1,4 +1,4 @@
-name: Build with zig 0.7.x
+name: Build with zig 0.8.x
 
 on:
   push:
@@ -13,18 +13,18 @@ jobs:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.7.1
+          version: 0.8.0
       - run: wget --quiet https://github.com/metamath/set.mm/raw/develop/set.mm --output-document set.mm
       - run: zig build
       - run: zig build -Drelease-fast=true
       # the previous step brings down memory use in the next step, from 10.7 GB to 6.4 GB
       # TODO: fix that exorbitant memory use for a 42 MB set.mm file...
-      - run: /usr/bin/time -v zig-cache/bin/zigmmverify set.mm
+      - run: /usr/bin/time -v zig-out/bin/zigmmverify set.mm
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - uses: goto-bus-stop/setup-zig@v1
         with:
-          version: 0.7.1
+          version: 0.8.0
       - run: zig fmt --check build.zig src/*.zig

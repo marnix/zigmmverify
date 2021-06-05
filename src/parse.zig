@@ -216,7 +216,7 @@ const TestFS = alltests.TestFS;
 
 fn forNext(statements: *StatementIterator, f: anytype) !void {
     const s = try statements.next();
-    _ = f.do(s);
+    _ = try f.do(s);
     s.?.deinit(std.testing.allocator);
 }
 
@@ -232,12 +232,12 @@ test "parse constant declaration from include file" {
 
     var statements = StatementIterator.init(std.testing.allocator, testFS.tmpDir.dir, "$[ constants.mm $]");
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(eqs(s.?.C.constants, &[_]Token{ "wff", "|-" }));
+        fn do(s: anytype) !void {
+            try expect(eqs(s.?.C.constants, &[_]Token{ "wff", "|-" }));
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "parse file only including empty include file" {
@@ -246,8 +246,8 @@ test "parse file only including empty include file" {
     try testFS.writeFile("empty.mm", "");
 
     var statements = StatementIterator.init(std.testing.allocator, testFS.tmpDir.dir, "$[ empty.mm $]");
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "include non-existing file" {
@@ -255,177 +255,177 @@ test "include non-existing file" {
     defer testFS.deinit();
 
     var statements = StatementIterator.init(std.testing.allocator, testFS.tmpDir.dir, "$[ nonexisting.mm $]");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.IncorrectFileName);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.IncorrectFileName);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "include without file name" {
     var statements = _StatementIterator_init("$[ $]");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.IncorrectFileName);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.IncorrectFileName);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "$c with label" {
     var statements = _StatementIterator_init("c $c T $.");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(s != null);
+        fn do(s: anytype) !void {
+            try expect(s != null);
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "$v with label" {
     var statements = _StatementIterator_init("v $v a $.");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(s != null);
+        fn do(s: anytype) !void {
+            try expect(s != null);
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "$f without label" {
     var statements = _StatementIterator_init("$f");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.MissingLabel);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "$e without label" {
     var statements = _StatementIterator_init("$e");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.MissingLabel);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "$d with label" {
     var statements = _StatementIterator_init("dxy $d x y $.");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(s != null);
+        fn do(s: anytype) !void {
+            try expect(s != null);
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "$a without label" {
     var statements = _StatementIterator_init("$a");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.MissingLabel);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "$p without label" {
     var statements = _StatementIterator_init("$p");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.MissingLabel);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.MissingLabel);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "${ with label" {
     var statements = _StatementIterator_init("block ${");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(s != null);
+        fn do(s: anytype) !void {
+            try expect(s != null);
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "$} with label" {
     var statements = _StatementIterator_init("endblock $}");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(s != null);
+        fn do(s: anytype) !void {
+            try expect(s != null);
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "unknown statement type (token skipped)" {
     var statements = _StatementIterator_init("x $x");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.IllegalToken);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "too short $f statement" {
     var statements = _StatementIterator_init("w $f wff $.");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.Incomplete);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.Incomplete);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "`$xy` token after label" {
     var statements = _StatementIterator_init("$xy");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.IllegalToken);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "`$xy` token after label" {
     var statements = _StatementIterator_init("aLabel $xy");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.IllegalToken);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "`$` token without label" {
     var statements = _StatementIterator_init("$");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.IllegalToken);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "`$` token after label" {
     var statements = _StatementIterator_init("aLabel $");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.IllegalToken);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "non-$ token after label" {
     var statements = _StatementIterator_init("aLabel nonCommand");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedToken);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.UnexpectedToken);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "parse $p declaration" {
     var statements = _StatementIterator_init("idwffph $p wff ph $= ? $.");
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(eqs(s.?.P.tokens, &[_]Token{ "wff", "ph" }));
-            expect(eqs(s.?.P.proof, &[_]Token{"?"}));
+        fn do(s: anytype) !void {
+            try expect(eqs(s.?.P.tokens, &[_]Token{ "wff", "ph" }));
+            try expect(eqs(s.?.P.proof, &[_]Token{"?"}));
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "parse $f declaration" {
     var statements = _StatementIterator_init("wph $f wff ph $.");
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(eq(s.?.F.label, "wph"));
-            expect(eqs(s.?.F.tokens, &[_]Token{ "wff", "ph" }));
+        fn do(s: anytype) !void {
+            try expect(eq(s.?.F.label, "wph"));
+            try expect(eqs(s.?.F.tokens, &[_]Token{ "wff", "ph" }));
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "incorrect label" {
@@ -435,42 +435,42 @@ test "incorrect label" {
 
 test "check error for label on $d" {
     var statements = _StatementIterator_init("xfreeinA $d A x $.");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.UnexpectedLabel);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.UnexpectedLabel);
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(eqs(s.?.D.variables, &[_]Token{ "A", "x" }));
+        fn do(s: anytype) !void {
+            try expect(eqs(s.?.D.variables, &[_]Token{ "A", "x" }));
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "check error for unknown command" {
     var statements = _StatementIterator_init("$Q");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.IllegalToken);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "parse constant declaration" {
     var statements = _StatementIterator_init("$c wff |- $.");
     _ = try forNext(&statements, struct {
-        fn do(s: anytype) void {
-            expect(eqs(s.?.C.constants, &[_]Token{ "wff", "|-" }));
+        fn do(s: anytype) !void {
+            try expect(eqs(s.?.C.constants, &[_]Token{ "wff", "|-" }));
         }
     });
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "parse comment, also including $[" {
     var statements = _StatementIterator_init("$( a $[ b.mm $] c $)");
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }
 
 test "parse empty file" {
     var statements = _StatementIterator_init("");
-    expect((try statements.next()) == null);
-    expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
+    try expect((try statements.next()) == null);
 }

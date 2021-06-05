@@ -58,10 +58,10 @@ fn warnExpr(expr: Expression) void {
     for (expr) |cvToken| {
         switch (cvToken.cv) {
             .C => {
-                std.debug.warn("{1}{0}", .{ cvToken.token, sep });
+                std.debug.warn("{1s}{0s}", .{ cvToken.token, sep });
             },
             .V => {
-                std.debug.warn("{1}${0}", .{ cvToken.token, sep });
+                std.debug.warn("{1s}${0s}", .{ cvToken.token, sep });
             },
         }
         sep = " ";
@@ -163,7 +163,7 @@ pub const RuleIterator = struct {
         self.activeHypotheses.deinit();
         var it = self.meanings.iterator();
         while (it.next()) |kv| {
-            kv.value.deinit(self.allocator);
+            kv.value_ptr.deinit(self.allocator);
         }
         self.meanings.deinit();
     }
@@ -401,7 +401,7 @@ const ScopeDiff = struct {
     fn deinitVariableInFStatements(self: *Self) void {
         var it = self.variablesInFStatements.iterator();
         while (it.next()) |kv| {
-            const variable = kv.key;
+            const variable = kv.key_ptr.*;
             if (self.iter.meanings.get(variable)) |meaning| {
                 assert(meaning == .Variable);
                 assert(meaning.Variable.usedInFStatement == true);
@@ -414,7 +414,7 @@ const ScopeDiff = struct {
     fn deinitActiveTokens(self: *Self) void {
         var it = self.activeTokens.iterator();
         while (it.next()) |kv| {
-            if (self.iter.meanings.remove(kv.key)) |*kv2| {
+            if (self.iter.meanings.fetchRemove(kv.key_ptr.*)) |*kv2| {
                 kv2.value.deinit(self.iter.allocator);
             } else unreachable;
         }
@@ -542,44 +542,44 @@ test "count number of active $d pairs" {
     try runRuleIteratorPart(&iter, "$v a b c d e $.");
 
     try runRuleIteratorPart(&iter, "$d $.");
-    expect(iter.activeDVPairs.items.len == n + 0);
+    try expect(iter.activeDVPairs.items.len == n + 0);
     n = iter.activeDVPairs.items.len;
 
     try runRuleIteratorPart(&iter, "$d a $.");
-    expect(iter.activeDVPairs.items.len == n + 0);
+    try expect(iter.activeDVPairs.items.len == n + 0);
     n = iter.activeDVPairs.items.len;
 
     try runRuleIteratorPart(&iter, "$d a a $.");
-    expect(iter.activeDVPairs.items.len == n + 1);
+    try expect(iter.activeDVPairs.items.len == n + 1);
     n = iter.activeDVPairs.items.len;
 
     try runRuleIteratorPart(&iter, "$d a b $.");
-    expect(iter.activeDVPairs.items.len == n + 1);
+    try expect(iter.activeDVPairs.items.len == n + 1);
     n = iter.activeDVPairs.items.len;
 
     try runRuleIteratorPart(&iter, "$d a b c d e $.");
-    expect(iter.activeDVPairs.items.len == n + 10);
+    try expect(iter.activeDVPairs.items.len == n + 10);
     n = iter.activeDVPairs.items.len;
 }
 
 test "$d with constant" {
-    expectError(Error.UnexpectedToken, runRuleIterator("$c class $. $d class $.", std.testing.allocator));
+    try expectError(Error.UnexpectedToken, runRuleIterator("$c class $. $d class $.", std.testing.allocator));
 }
 
 test "$d with undeclared token" {
-    expectError(Error.UnexpectedToken, runRuleIterator("$d class $.", std.testing.allocator));
+    try expectError(Error.UnexpectedToken, runRuleIterator("$d class $.", std.testing.allocator));
 }
 
 test "use undeclared variable" {
-    expectError(Error.UnexpectedToken, runRuleIterator("$c wff $. wph $f wff ph $.", std.testing.allocator));
+    try expectError(Error.UnexpectedToken, runRuleIterator("$c wff $. wph $f wff ph $.", std.testing.allocator));
 }
 
 test "use undeclared variable" {
-    expectError(Error.UnexpectedToken, runRuleIterator("$c wff $. wph $f wff ph $.", std.testing.allocator));
+    try expectError(Error.UnexpectedToken, runRuleIterator("$c wff $. wph $f wff ph $.", std.testing.allocator));
 }
 
 test "use statement label as a token" {
-    expectError(Error.UnexpectedToken, runRuleIterator("$c wff ph $. wph $f wff ph $. wxx $e wph $.", std.testing.allocator));
+    try expectError(Error.UnexpectedToken, runRuleIterator("$c wff ph $. wph $f wff ph $. wxx $e wph $.", std.testing.allocator));
 }
 
 test "simplest correct $f" {
@@ -595,24 +595,24 @@ test "tokenlist to expression" {
     defer tokens.deinit();
     try tokens.append("wff");
     try tokens.append("ph");
-    expect(eqs(tokens, &[_]Token{ "wff", "ph" }));
+    try expect(eqs(tokens, &[_]Token{ "wff", "ph" }));
 
     const expression = try iter.expressionOf(tokens);
     defer std.testing.allocator.free(expression);
 
-    expect(expression.len == 2);
-    expect(eq(expression[0].token, "wff"));
-    expect(expression[0].cv == .C);
-    expect(eq(expression[1].token, "ph"));
-    expect(expression[1].cv == .V);
+    try expect(expression.len == 2);
+    try expect(eq(expression[0].token, "wff"));
+    try expect(expression[0].cv == .C);
+    try expect(eq(expression[1].token, "ph"));
+    try expect(expression[1].cv == .V);
 }
 
 test "no duplicate variable declarations" {
-    expectError(Error.Duplicate, runRuleIterator("$c ca cb $. $v v $. cav $f ca v $. cbv $f cb v $.", std.testing.allocator));
+    try expectError(Error.Duplicate, runRuleIterator("$c ca cb $. $v v $. cav $f ca v $. cbv $f cb v $.", std.testing.allocator));
 }
 
 test "no duplicate variable declarations, in nested scope (2)" {
-    expectError(Error.Duplicate, runRuleIterator("$c ca cb $. ${ $v v $. cav $f ca v $. cbv $f cb v $. $}", std.testing.allocator));
+    try expectError(Error.Duplicate, runRuleIterator("$c ca cb $. ${ $v v $. cav $f ca v $. cbv $f cb v $. $}", std.testing.allocator));
 }
 
 test "duplicate variable declarations, in nested scope (2)" {
@@ -631,13 +631,13 @@ test "$v in nested scope, used in $a (use-after-free reproduction)" {
     const cv: InferenceRule = iter.meanings.get("cv").?.Rule;
     const vx_cv: Hypothesis = cv.hypotheses[0];
     const x: Token = vx_cv.expression[1].token;
-    expect(eq(x, "x"));
+    try expect(eq(x, "x"));
 
     try runRuleIteratorPart(&iter, "$}");
     const cv2: InferenceRule = iter.meanings.get("cv").?.Rule;
     const vx_cv2: Hypothesis = cv.hypotheses[0];
     const x2: Token = vx_cv.expression[1].token;
-    expect(eq(x2, "x"));
+    try expect(eq(x2, "x"));
 }
 
 test "$f in nested scope (1)" {
@@ -649,19 +649,19 @@ test "$f in nested scope (2)" {
 }
 
 test "$f using two constants" {
-    expectError(Error.UnexpectedToken, runRuleIterator("$c wff $. wwff $f wff wff $.", std.testing.allocator));
+    try expectError(Error.UnexpectedToken, runRuleIterator("$c wff $. wwff $f wff wff $.", std.testing.allocator));
 }
 
 test "$f using undeclared variable" {
-    expectError(Error.UnexpectedToken, runRuleIterator("$c wff $. wps $f wff ps $.", std.testing.allocator));
+    try expectError(Error.UnexpectedToken, runRuleIterator("$c wff $. wps $f wff ps $.", std.testing.allocator));
 }
 
 test "token is either constant or variable, not both" {
-    expectError(Error.Duplicate, runRuleIterator("$c wff $. $v wff $.", std.testing.allocator));
+    try expectError(Error.Duplicate, runRuleIterator("$c wff $. $v wff $.", std.testing.allocator));
 }
 
 test "no constant allowed in nested scope" {
-    expectError(Error.UnexpectedToken, runRuleIterator("${ $c wff $. $}", std.testing.allocator));
+    try expectError(Error.UnexpectedToken, runRuleIterator("${ $c wff $. $}", std.testing.allocator));
 }
 
 test "nested variable" {
@@ -669,15 +669,15 @@ test "nested variable" {
 }
 
 test "nested duplicate variable" {
-    expectError(Error.Duplicate, runRuleIterator("$v ph $. ${ $v ph $. $}", std.testing.allocator));
+    try expectError(Error.Duplicate, runRuleIterator("$v ph $. ${ $v ph $. $}", std.testing.allocator));
 }
 
 test "unopened block" {
-    expectError(Error.UnexpectedToken, runRuleIterator("$}", std.testing.allocator));
+    try expectError(Error.UnexpectedToken, runRuleIterator("$}", std.testing.allocator));
 }
 
 test "unclosed block" {
-    expectError(Error.Incomplete, runRuleIterator("${", std.testing.allocator));
+    try expectError(Error.Incomplete, runRuleIterator("${", std.testing.allocator));
 }
 
 test "multiple blocks" {
@@ -685,7 +685,7 @@ test "multiple blocks" {
 }
 
 test "duplicate variable" {
-    expectError(Error.Duplicate, runRuleIterator("$v ph ps ph $.", std.testing.allocator));
+    try expectError(Error.Duplicate, runRuleIterator("$v ph ps ph $.", std.testing.allocator));
 }
 
 test "single variable" {
@@ -693,7 +693,7 @@ test "single variable" {
 }
 
 test "duplicate constant" {
-    expectError(Error.Duplicate, runRuleIterator("$c wff wff $.", std.testing.allocator));
+    try expectError(Error.Duplicate, runRuleIterator("$c wff wff $.", std.testing.allocator));
 }
 
 fn tokenListOf(buffer: []const u8) !TokenList {
@@ -723,7 +723,7 @@ test "iterate over no mandatory hypotheses" {
     var it = try iter.mandatoryHypothesesOf(expression);
     defer it.deinit();
     assert(it.count() == 0);
-    expect(it.next() == null);
+    try expect(it.next() == null);
 }
 
 test "iterate over single $f hypothesis" {
@@ -739,10 +739,10 @@ test "iterate over single $f hypothesis" {
     assert(it.count() == 1);
 
     item = it.next();
-    expect(eq(item.?.label, "wph"));
-    expect(item.?.fe == .F);
+    try expect(eq(item.?.label, "wph"));
+    try expect(item.?.fe == .F);
 
-    expect(it.next() == null);
+    try expect(it.next() == null);
 }
 
 test "iterate with $e hypothesis" {
@@ -758,19 +758,19 @@ test "iterate with $e hypothesis" {
     assert(it.count() == 3);
 
     item = it.next();
-    expect(eq(item.?.label, "wta"));
-    expect(item.?.fe == .F);
+    try expect(eq(item.?.label, "wta"));
+    try expect(item.?.fe == .F);
 
     item = it.next();
-    expect(eq(item.?.label, "wph"));
-    expect(item.?.fe == .F);
+    try expect(eq(item.?.label, "wph"));
+    try expect(item.?.fe == .F);
     assert(it.count() == 1);
 
     item = it.next();
-    expect(eq(item.?.label, "hyp"));
-    expect(item.?.fe == .E);
+    try expect(eq(item.?.label, "hyp"));
+    try expect(item.?.fe == .E);
 
-    expect(it.next() == null);
+    try expect(it.next() == null);
 }
 
 test "inference rule with $f and $e mandatory hypotheses" {
@@ -781,7 +781,7 @@ test "inference rule with $f and $e mandatory hypotheses" {
     try runRuleIteratorPart(&iter, "alltrue $a |- ph $.");
 
     const alltrueRule = iter.meanings.get("alltrue").?.Rule;
-    expect(alltrueRule.hypotheses.len == 3);
-    expect(eq(alltrueRule.hypotheses[1].expression[1].token, "ph"));
-    expect(eq(alltrueRule.conclusion[0].token, "|-"));
+    try expect(alltrueRule.hypotheses.len == 3);
+    try expect(eq(alltrueRule.hypotheses[1].expression[1].token, "ph"));
+    try expect(eq(alltrueRule.conclusion[0].token, "|-"));
 }
