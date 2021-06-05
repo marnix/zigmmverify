@@ -1,9 +1,4 @@
-_Note that this branch is built using nightly 'master' zig.
-The more actively developed branch is
-[zig-0.7.x](https://github.com/marnix/zigmmverify/tree/zig-0.7.x).
-Changes are periodically merged from there to this branch._
-
-[![Build with zig master](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%20master/badge.svg?branch=zig-master)](https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-master)
+[![Build with Zig 0.8.0](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%200.8.0/badge.svg?branch=zig-0.8.0)](https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-0.8.0)
 
 # A [Metamath](http://metamath.org) proof verifier in [Zig](https://ziglang.org/)
 
@@ -19,7 +14,7 @@ and modules.
 
 # How to build and run
 
-Build using Zig master, then just run the resulting binary,
+Build using Zig 0.8.0, then just run the resulting binary,
 passing a single .mm file on the command line.
 
 For example, use set.mm, which you can get from metamath.org,
