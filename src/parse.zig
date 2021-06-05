@@ -430,7 +430,7 @@ test "parse $f declaration" {
 
 test "incorrect label" {
     var statements = _StatementIterator_init("w? $f wff ? $.");
-    if (statements.next()) |_| unreachable else |err| expect(err == Error.IllegalToken);
+    if (statements.next()) |_| unreachable else |err| try expect(err == Error.IllegalToken);
 }
 
 test "check error for label on $d" {
