@@ -163,7 +163,7 @@ pub const RuleIterator = struct {
         self.activeHypotheses.deinit();
         var it = self.meanings.iterator();
         while (it.next()) |kv| {
-            kv.value.deinit(self.allocator);
+            kv.value_ptr.deinit(self.allocator);
         }
         self.meanings.deinit();
     }
@@ -401,7 +401,7 @@ const ScopeDiff = struct {
     fn deinitVariableInFStatements(self: *Self) void {
         var it = self.variablesInFStatements.iterator();
         while (it.next()) |kv| {
-            const variable = kv.key;
+            const variable = kv.key_ptr.*;
             if (self.iter.meanings.get(variable)) |meaning| {
                 assert(meaning == .Variable);
                 assert(meaning.Variable.usedInFStatement == true);
@@ -414,7 +414,7 @@ const ScopeDiff = struct {
     fn deinitActiveTokens(self: *Self) void {
         var it = self.activeTokens.iterator();
         while (it.next()) |kv| {
-            if (self.iter.meanings.remove(kv.key)) |*kv2| {
+            if (self.iter.meanings.fetchRemove(kv.key_ptr.*)) |*kv2| {
                 kv2.value.deinit(self.iter.allocator);
             } else unreachable;
         }
