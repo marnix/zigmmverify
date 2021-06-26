@@ -27,10 +27,6 @@ pub fn verifyFile(allocator: *Allocator, dir: std.fs.Dir, mm_file_name: []const 
     var iter = try RuleIterator.init(allocator);
     defer iter.deinit();
 
-    var frameArena = std.heap.ArenaAllocator.init(iter.allocator);
-    defer frameArena.deinit();
-    const frameAllocator = &frameArena.allocator;
-
     var nr_proofs: u64 = 0;
     defer std.debug.warn("\nFound {0} $p statements so far.\n", .{nr_proofs});
 
@@ -41,7 +37,6 @@ pub fn verifyFile(allocator: *Allocator, dir: std.fs.Dir, mm_file_name: []const 
             nr_proofs += 1;
             const rule = item.rule;
             std.event.Loop.startCpuBoundOperation();
-            const frame = try frameAllocator.create(@Frame(verifyProofConclusion));
             try verifyProofConclusion(&iter, item.label, proof, rule.hypotheses, .{
                 .expression = rule.conclusion,
                 .dvPairs = rule.activeDVPairs,
@@ -56,8 +51,8 @@ fn verifyProofConclusion(iter: *RuleIterator, label: []const u8, proof: TokenLis
     expression: Expression,
     dvPairs: []DVPair,
 }) anyerror!void {
-    // std.debug.warn("\nstarting to verify proof of {0s}.\n", .{label});
-    // defer std.debug.warn("end of verify proof of {0s}.\n", .{label});
+    std.log.debug("starting to verify proof of {s}.", .{label});
+    defer std.log.debug("end of verify proof of {s}.", .{label});
     var result = try prove.runProof(proof, hypotheses, iter, iter.allocator);
     defer result.deinit(iter.allocator);
 
