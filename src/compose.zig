@@ -198,13 +198,13 @@ pub const RuleIterator = struct {
                 if (self.currentScopeDiff) |_| return Error.UnexpectedToken; // $c inside ${ $}
                 for (cStatement.constants.items) |constant| {
                     if (self.meanings.get(constant)) |_| return Error.Duplicate;
-                    const kv = try self.meanings.put(constant, MeaningType.Constant);
+                    _ = try self.meanings.put(constant, MeaningType.Constant);
                 }
             },
             .V => |vStatement| {
                 for (vStatement.variables.items) |variable| {
                     if (self.meanings.get(variable)) |_| return Error.Duplicate;
-                    const kv = try self.meanings.put(variable, Meaning{ .Variable = .{ .usedInFStatement = false } });
+                    _ = try self.meanings.put(variable, Meaning{ .Variable = .{ .usedInFStatement = false } });
                     if (self.currentScopeDiff) |scopeDiff| {
                         _ = try scopeDiff.activeTokens.add(variable); // this $v will become inactive at the next $}
                     }
@@ -522,7 +522,7 @@ fn runRuleIterator(buffer: []const u8, allocator: *Allocator) !void {
 fn runRuleIteratorPart(iter: *RuleIterator, buffer: []const u8) !void {
     const unused_root_dir = undefined; // no file access done in this test
     try iter.addStatementsFrom(unused_root_dir, buffer);
-    while (try iter.next()) |*item| {}
+    while (try iter.next()) |*_| {}
 }
 
 test "active DVR (found a memory leak)" {
@@ -634,8 +634,8 @@ test "$v in nested scope, used in $a (use-after-free reproduction)" {
     try expect(eq(x, "x"));
 
     try runRuleIteratorPart(&iter, "$}");
-    const cv2: InferenceRule = iter.meanings.get("cv").?.Rule;
-    const vx_cv2: Hypothesis = cv.hypotheses[0];
+    _ = iter.meanings.get("cv").?.Rule;
+    _ = cv.hypotheses[0];
     const x2: Token = vx_cv.expression[1].token;
     try expect(eq(x2, "x"));
 }

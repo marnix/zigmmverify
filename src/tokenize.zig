@@ -57,7 +57,6 @@ pub const TokenIterator = struct {
         // invariant: self.buffer[i..j] is the current token so far
         while (true) {
             // where are we?
-            var optError: ?Error = null;
             const atEnd = (j >= self.buffer.len);
             var afterToken = true;
             if (!atEnd) {
