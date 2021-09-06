@@ -1,4 +1,6 @@
-usingnamespace @import("globals.zig");
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const assert = std.debug.assert;
 
 const errors = @import("errors.zig");
 const Error = errors.Error;
@@ -19,7 +21,7 @@ pub const TokenSet = struct {
 
     pub fn add(self: *Self, token: Token) !bool {
         if (self.map.contains(token)) return true; // already present
-        try self.map.put(token, void_value);
+        try self.map.put(token, undefined);
         return false;
     }
 

@@ -1,4 +1,6 @@
-usingnamespace @import("globals.zig");
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const assert = std.debug.assert;
 
 pub const TestFS = struct {
     tmpDir: std.testing.TmpDir = undefined,
