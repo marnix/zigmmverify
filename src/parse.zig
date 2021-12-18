@@ -28,7 +28,7 @@ pub const Statement = union(StatementType) {
     BlockOpen,
     BlockClose: struct {},
 
-    pub fn deinit(self: *Statement, allocator: *Allocator) void {
+    pub fn deinit(self: *Statement, allocator: Allocator) void {
         switch (self.*) {
             .C => self.*.C.constants.deinit(),
             .V => self.*.V.variables.deinit(),
@@ -45,7 +45,7 @@ pub const Statement = union(StatementType) {
         allocator.destroy(self);
     }
 
-    pub fn deinitLeavingProof(self: *Statement, allocator: *Allocator) TokenList {
+    pub fn deinitLeavingProof(self: *Statement, allocator: Allocator) TokenList {
         defer allocator.destroy(self);
         self.*.P.tokens.deinit();
         return self.*.P.proof;
@@ -53,13 +53,13 @@ pub const Statement = union(StatementType) {
 };
 
 pub const StatementIterator = struct {
-    allocator: *Allocator,
+    allocator: Allocator,
     dir: std.fs.Dir,
     tokens: TokenIterator,
     optStatement: ?*Statement = null,
     nestedIterator: ?*StatementIterator = null,
 
-    pub fn init(allocator: *Allocator, dir: std.fs.Dir, buffer: []const u8) StatementIterator {
+    pub fn init(allocator: Allocator, dir: std.fs.Dir, buffer: []const u8) StatementIterator {
         return StatementIterator{ .allocator = allocator, .dir = dir, .tokens = TokenIterator{ .buffer = buffer } };
     }
 

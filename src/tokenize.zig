@@ -11,7 +11,7 @@ pub const TokenSet = struct {
     const Self = @This();
     map: TokenMap(void),
 
-    pub fn init(allocator: *Allocator) Self {
+    pub fn init(allocator: Allocator) Self {
         return Self{ .map = TokenMap(void).init(allocator) };
     }
 
