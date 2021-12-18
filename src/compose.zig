@@ -16,12 +16,12 @@ const parse = @import("parse.zig");
 const Statement = parse.Statement;
 const StatementIterator = parse.StatementIterator;
 
-pub fn copyExpression(allocator: *Allocator, original: Expression) !Expression {
+pub fn copyExpression(allocator: Allocator, original: Expression) !Expression {
     return try sliceCopy(CVToken, allocator, original);
 }
 
 // TODO: move to new utils.zig?
-fn sliceCopy(comptime T: type, allocator: *Allocator, original: []const T) ![]const T {
+fn sliceCopy(comptime T: type, allocator: Allocator, original: []const T) ![]const T {
     var copy = try allocator.alloc(T, original.len);
     errdefer allocator.free(copy);
     std.mem.copy(T, copy, original);
@@ -46,24 +46,24 @@ pub fn eqExpr(a: Expression, b: Expression) bool {
         break :brk true;
     };
     if (!result) {
-        std.debug.warn("\neqExpr: actual = ", .{});
-        warnExpr(a);
-        std.debug.warn(", expected = ", .{});
-        warnExpr(b);
-        std.debug.warn(".\n", .{});
+        std.debug.print("\neqExpr: actual = ", .{});
+        debugPrintExpr(a);
+        std.debug.print(", expected = ", .{});
+        debugPrintExpr(b);
+        std.debug.print(".\n", .{});
     }
     return result;
 }
 
-fn warnExpr(expr: Expression) void {
+fn debugPrintExpr(expr: Expression) void {
     var sep: []const u8 = "";
     for (expr) |cvToken| {
         switch (cvToken.cv) {
             .C => {
-                std.debug.warn("{1s}{0s}", .{ cvToken.token, sep });
+                std.debug.print("{s}{s}", .{ sep, cvToken.token });
             },
             .V => {
-                std.debug.warn("{1s}${0s}", .{ cvToken.token, sep });
+                std.debug.print("{s}${s}", .{ sep, cvToken.token });
             },
         }
         sep = " ";
@@ -76,7 +76,7 @@ pub const Hypothesis = struct {
     expression: Expression,
     isF: bool,
 
-    fn deinit(self: *Self, allocator: *Allocator) void {
+    fn deinit(self: *Self, allocator: Allocator) void {
         allocator.free(self.expression);
     }
 };
@@ -88,7 +88,7 @@ pub const InferenceRule = struct {
     hypotheses: []Hypothesis,
     conclusion: Expression,
 
-    fn deinit(self: *Self, allocator: *Allocator) void {
+    fn deinit(self: *Self, allocator: Allocator) void {
         allocator.free(self.activeDVPairs);
         for (self.hypotheses) |*hyp| {
             hyp.deinit(allocator);
@@ -109,7 +109,7 @@ const Meaning = union(MeaningType) {
     Variable: struct { usedInFStatement: bool },
     Rule: InferenceRule,
 
-    fn deinit(self: *Self, allocator: *Allocator) void {
+    fn deinit(self: *Self, allocator: Allocator) void {
         switch (self.*) {
             .Constant, .Variable => {},
             .Rule => self.*.Rule.deinit(allocator),
@@ -132,7 +132,7 @@ const RuleIteratorItem = struct {
 pub const RuleIterator = struct {
     const Self = @This();
 
-    allocator: *Allocator,
+    allocator: Allocator,
 
     statements: ?parse.StatementIterator,
 
@@ -146,7 +146,7 @@ pub const RuleIterator = struct {
     /// and its immediately surrounding scope
     currentScopeDiff: ?*ScopeDiff,
 
-    pub fn init(allocator: *Allocator) !Self {
+    pub fn init(allocator: Allocator) !Self {
         return Self{
             .allocator = allocator,
             .statements = null,
@@ -430,13 +430,13 @@ const ScopeDiff = struct {
 const MHIterator = struct {
     const Self = @This();
 
-    allocator: *Allocator,
+    allocator: Allocator,
     mandatoryVariables: TokenSet,
     mhs: SinglyLinkedList(FELabel),
     len: usize,
 
     /// expression remains owned by the caller
-    fn init(iter: *RuleIterator, allocator: *Allocator, expression: Expression) !MHIterator {
+    fn init(iter: *RuleIterator, allocator: Allocator, expression: Expression) !MHIterator {
         // initially mandatory variables: those from the given expression
         var mandatoryVariables = TokenSet.init(allocator);
         for (expression) |cvToken| if (cvToken.cv == .V) {
@@ -513,8 +513,8 @@ const expect = std.testing.expect;
 const expectError = std.testing.expectError;
 const eqs = tokenize.eqs;
 
-fn runRuleIterator(buffer: []const u8, allocator: *Allocator) !void {
-    errdefer |err| std.debug.warn("\nError {0} happened...\n", .{err});
+fn runRuleIterator(buffer: []const u8, allocator: Allocator) !void {
+    errdefer |err| std.log.info("\nError {} happened...\n", .{err});
     var iter = try RuleIterator.init(allocator);
     defer iter.deinit();
     try runRuleIteratorPart(&iter, buffer);

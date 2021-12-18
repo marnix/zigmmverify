@@ -7,7 +7,7 @@ const verify = @import("verify.zig");
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const allocator = &arena.allocator;
+    const allocator = arena.child_allocator;
 
     const fileName = fileName: {
         var argIter = std.process.args();

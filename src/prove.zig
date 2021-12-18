@@ -32,13 +32,13 @@ const Substitution = TokenMap(Expression);
 
 const ProofStack = struct {
     const Self = @This();
-    allocator: *Allocator,
+    allocator: Allocator,
     expressions: std.ArrayList(Expression),
     /// we collect these and clean them up at the very end
     arena: std.heap.ArenaAllocator,
     dvPairs: std.ArrayList(DVPair),
 
-    fn init(allocator: *Allocator) Self {
+    fn init(allocator: Allocator) Self {
         return ProofStack{
             .allocator = allocator,
             .expressions = std.ArrayList(Expression).init(allocator),
@@ -121,7 +121,7 @@ const ProofStack = struct {
             };
         }
 
-        const expression = try substitute(rule.conclusion, substitution, &self.arena.allocator);
+        const expression = try substitute(rule.conclusion, substitution, self.arena.allocator());
         try self.pushExpression(expression);
     }
 };
@@ -130,14 +130,14 @@ pub const RunProofResult = struct {
     expression: Expression,
     dvPairs: std.ArrayList(DVPair),
 
-    pub fn deinit(self: *@This(), allocator: *Allocator) void {
+    pub fn deinit(self: *@This(), allocator: Allocator) void {
         allocator.free(self.expression);
         self.dvPairs.deinit();
     }
 };
 
 /// caller becomes owner of allocated result
-pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleIterator: *RuleIterator, allocator: *Allocator) !RunProofResult {
+pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleIterator: *RuleIterator, allocator: Allocator) !RunProofResult {
     const Modes = enum { Initial, Uncompressed, CompressedPart1, CompressedPart2 };
     var mode = Modes.Initial;
 
@@ -227,7 +227,7 @@ pub fn runProof(proof: TokenList, hypotheses: []Hypothesis, ruleIterator: *RuleI
 }
 
 /// caller becomes owner of allocated result
-fn substitute(orig: Expression, subst: Substitution, allocator: *Allocator) !Expression {
+fn substitute(orig: Expression, subst: Substitution, allocator: Allocator) !Expression {
     var resultAsList = ArrayList(compose.CVToken).init(allocator);
     defer resultAsList.deinit();
     for (orig) |cvToken| {

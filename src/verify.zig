@@ -21,16 +21,16 @@ const RuleIterator = compose.RuleIterator;
 
 const prove = @import("prove.zig");
 
-pub fn verifyFile(allocator: *Allocator, dir: std.fs.Dir, mm_file_name: []const u8) !void {
+pub fn verifyFile(allocator: Allocator, dir: std.fs.Dir, mm_file_name: []const u8) !void {
     const buffer = try readBuffer(allocator, dir, mm_file_name);
     defer allocator.free(buffer);
 
-    errdefer |err| std.debug.warn("\nError {0} happened...\n", .{err});
+    errdefer |err| std.log.warn("\nError {} happened...\n", .{err});
     var iter = try RuleIterator.init(allocator);
     defer iter.deinit();
 
     var nr_proofs: u64 = 0;
-    defer std.debug.warn("\nFound {0} $p statements so far.\n", .{nr_proofs});
+    defer std.log.info("\nFound {} $p statements so far.\n", .{nr_proofs});
 
     try iter.addStatementsFrom(dir, buffer);
     while (try iter.next()) |*item| {
@@ -71,11 +71,11 @@ fn verifyProofConclusion(iter: *RuleIterator, label: []const u8, proof: TokenLis
             }
         } else {
             // proofDVPair is not declared in any active $d statement
-            std.debug.warn("$d {0s} {1s} $. expected but not found in the following list:\n", .{ proofDVPair.var1, proofDVPair.var2 });
+            std.log.warn("$d {s} {s} $. expected but not found in the following list:\n", .{ proofDVPair.var1, proofDVPair.var2 });
             for (conclusion.dvPairs) |ruleDVPair| {
-                std.debug.warn("   $d {0s} {1s} $.\n", .{ ruleDVPair.var1, ruleDVPair.var2 });
+                std.log.warn("   $d {s} {s} $.\n", .{ ruleDVPair.var1, ruleDVPair.var2 });
             }
-            std.debug.warn("(end of list)\n", .{});
+            std.log.warn("(end of list)\n", .{});
             return Error.DVRMissing; // TODO: Test
         }
     }
@@ -99,6 +99,17 @@ fn _verifyBuffer(buffer: []const u8) !void {
     try verifyFile(std.testing.allocator, testFS.tmpDir.dir, test_file_name);
 }
 
+fn _verifyBufferWithLogging(buffer: []const u8) !void {
+    const test_file_name = "test_file.mm";
+
+    var testFS = TestFS.init();
+    defer testFS.deinit();
+    try testFS.writeFile(test_file_name, buffer);
+
+    const allocator = std.heap.LoggingAllocator(.warn, .err).init(std.testing.allocator).allocator();
+    try verifyFile(allocator, testFS.tmpDir.dir, test_file_name);
+}
+
 test "proof with $d violation" {
     try expectError(Error.DVRMissing, _verifyBuffer(
         \\$c wff |- $.
@@ -115,7 +126,6 @@ test "proof with $d violation" {
 }
 
 test "proof with correct $d" {
-    // FOR DEBUGGING: const allocator = &std.heap.loggingAllocator(std.testing.allocator, std.io.getStdErr().outStream()).allocator;
     try _verifyBuffer(
         \\$c wff |- $.
         \\$v P Q R $.
