@@ -1,9 +1,4 @@
-_Note that this branch is built using nightly 'master' zig.
-The more actively developed branch is
-[zig-0.8.x](https://github.com/marnix/zigmmverify/tree/zig-0.8.x).
-Changes are periodically merged from there to this branch._
-
-[![Build with zig master](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%20master/badge.svg?branch=zig-master)](https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-master)
+[![Build with Zig 0.9.0](https://github.com/marnix/zigmmverify/workflows/Build%20with%20zig%200.9.x/badge.svg?branch=zig-0.9.x)](https://github.com/marnix/zigmmverify/actions?query=branch%3Azig-0.9.x)
 
 # A [Metamath](http://metamath.org) proof verifier in [Zig](https://ziglang.org/)
 
