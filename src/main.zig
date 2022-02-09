@@ -10,7 +10,7 @@ pub fn main() !void {
     const allocator = arena.child_allocator;
 
     const fileName = fileName: {
-        var argIter = std.process.args();
+        var argIter = try std.process.argsWithAllocator(allocator);
         _ = argIter.next().?; // skip command name, is always present
         break :fileName (argIter.next() orelse return error.SingleCommandLineArgumentExpected);
     };
