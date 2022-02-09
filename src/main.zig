@@ -10,9 +10,9 @@ pub fn main() !void {
     const allocator = arena.child_allocator;
 
     const fileName = fileName: {
-        var argIter = std.process.args();
-        _ = argIter.next().?; // skip command name, is always present
-        break :fileName (argIter.next() orelse return error.SingleCommandLineArgumentExpected);
+        var argIter = try std.process.argsWithAllocator(allocator);
+        _ = try argIter.next(allocator).?; // skip command name, is always present
+        break :fileName (try argIter.next(allocator) orelse return error.SingleCommandLineArgumentExpected);
     };
 
     _ = verify.verifyFile(allocator, std.fs.cwd(), fileName) catch |err| {
