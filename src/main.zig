@@ -11,8 +11,8 @@ pub fn main() !void {
 
     const fileName = fileName: {
         var argIter = std.process.args();
-        _ = argIter.nextPosix().?; // skip command name, is always present
-        break :fileName (argIter.nextPosix() orelse return error.SingleCommandLineArgumentExpected);
+        _ = argIter.next().?; // skip command name, is always present
+        break :fileName (argIter.next() orelse return error.SingleCommandLineArgumentExpected);
     };
 
     _ = verify.verifyFile(allocator, std.fs.cwd(), fileName) catch |err| {
